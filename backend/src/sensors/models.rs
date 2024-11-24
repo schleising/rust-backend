@@ -1,7 +1,7 @@
 use std::str;
 
 use chrono;
-
+use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
 
 // The instance type of the capability, e.g. "online" or "sensorTemperature"
@@ -94,8 +94,8 @@ pub struct GoveeStatusResponse {
 // Measurement data from the sensor stored in the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorData {
-    #[serde(rename = "deviceName")]
     pub device_name: String,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub online: bool,
     pub temperature: f32,

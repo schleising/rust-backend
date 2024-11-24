@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bson = { version = "2.13.0", features = ["chrono-0_4"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-serde = { version = "1.0.213", features = ["derive"] }
+mongodb = { version = "3.1.0", features = ["sync"] }
+serde = { version = "1.0.215", features = ["derive"] }
 ureq = { version = "2.10.1", features = ["json"] }
