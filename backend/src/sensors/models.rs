@@ -4,100 +4,87 @@ use chrono;
 use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
 
-// The instance type of the capability, e.g. "online" or "sensorTemperature"
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum InstanceType {
-    #[serde(rename = "online")]
-    Online,
-    #[serde(rename = "sensorTemperature")]
-    Temperature,
-    #[serde(rename = "sensorHumidity")]
-    Humidity,
-}
+pub const HUE_DISCOVERY_URL: &str = "https://discovery.meethue.com/";
+pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
+pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
+pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
-// The value of the humidity capability
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HumidityValue {
-    #[serde(rename = "currentHumidity")]
-    pub current_humidity: f32,
-}
-
-// The state of the capability, e.g. the temperature value
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Data {
-    Bool(bool),
-    Temperature(f32),
-    Humidity(HumidityValue),
+pub struct HueBridge {
+    id: String,
+    pub internalipaddress: String,
+    port: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Value {
-    pub value: Data,
+pub struct ProductData {
+    model_id: String,
+    manufacturer_name: String,
+    product_name: String,
+    product_archetype: String,
+    certified: bool,
+    software_version: String,
+    hardware_platform_type: Option<String>,
 }
 
-// The container for the capability data
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Capability {
-    #[serde(rename = "type")]
-    pub capability_type: String,
-    pub instance: InstanceType,
-    pub state: Option<Value>,
+pub struct Metadata {
+    pub name: String,
+    archetype: String,
 }
 
-// The device information
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Service {
+    pub rid: String,
+    pub rtype: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Device {
-    pub sku: String,
-    pub device: String,
-    #[serde(rename = "deviceName")]
-    pub device_name: String,
+    pub id: String,
+    id_v1: Option<String>,
+    product_data: ProductData,
+    pub metadata: Metadata,
+    pub services: Vec<Service>,
     #[serde(rename = "type")]
-    pub device_type: String,
-    pub capabilities: Vec<Capability>,
+    type_: String,
 }
 
-// The response from the Govee API for the list of devices
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GoveeDeviceResponse {
-    pub code: i32,
-    pub message: String,
+pub struct DeviceList {
     pub data: Vec<Device>,
 }
 
-// The payload for the status request
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GoveeStatusRequestPayload {
-    pub sku: String,
-    pub device: String,
-    pub capabilities: Option<Vec<Capability>>,
+pub struct TemperatureReport {
+    pub changed: chrono::DateTime<chrono::Utc>,
+    pub temperature: f32,
 }
 
-// The request to get the status of a device
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GoveeStatusRequest {
-    #[serde(rename = "requestId")]
-    pub request_id: String,
-    pub payload: GoveeStatusRequestPayload,
+pub struct Temperature {
+    pub temperature_report: TemperatureReport,
 }
 
-// The response from the Govee API for the status request
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GoveeStatusResponse {
-    #[serde(rename = "requestId")]
-    pub request_id: String,
-    pub code: i32,
-    pub msg: String,
-    pub payload: GoveeStatusRequestPayload,
+pub struct HueTemperatureData {
+    #[serde(rename = "type")]
+    type_: String,
+    pub id: String,
+    enabled: bool,
+    pub temperature: Temperature,
 }
 
-// Measurement data from the sensor stored in the database
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SensorData {
-    pub device_name: String,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HueTemperatureList {
+    pub data: Vec<HueTemperatureData>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemperatureData {
+    pub id: String,
+    pub name: String,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub online: bool,
     pub temperature: f32,
-    pub humidity: f32,
 }
