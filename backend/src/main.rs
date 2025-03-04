@@ -9,7 +9,7 @@ use sensors::sensors::Sensors;
 fn main() {
     // Initialize the logger
     env_logger::Builder::new()
-        .filter(Some("rust_backend"), log::LevelFilter::Debug)
+        .filter(Some("rust_backend"), log::LevelFilter::Info)
         .format(|buf, record| {
             writeln!(
                 buf,
@@ -34,11 +34,8 @@ fn main() {
         }
     };
 
-    // Get the IP address of the Hue bridge
-    let sensors = Sensors::new(&hue_application_key);
-
-    // Check if the IP address was successfully retrieved
-    let sensors = match sensors {
+    // Create a new Sensors struct
+    let sensors = match Sensors::new(&hue_application_key) {
         // If the IP address was successfully retrieved, store it in the variable
         Ok(sensors) => sensors,
         // If there was an error retrieving the IP address, print the error message and exit
@@ -48,20 +45,9 @@ fn main() {
         }
     };
 
-    // Get the temperature from the sensors
-    let temperature = sensors.get_temperatures();
+    // Run the sensors
+    let handle = sensors.run();
 
-    // Check if the temperature was successfully retrieved
-    let temperature = match temperature {
-        // If the temperature was successfully retrieved, store it in the variable
-        Ok(temperature) => temperature,
-        // If there was an error retrieving the temperature, print the error message and exit
-        Err(error) => {
-            log::error!("{}", error);
-            return;
-        }
-    };
-
-    // Pretty print the temperature
-    log::info!("Temperature: {:#?}", temperature);
+    // Wait for the thread to finish
+    handle.join().unwrap();
 }
