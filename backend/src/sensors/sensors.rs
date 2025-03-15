@@ -125,7 +125,6 @@ impl Sensors {
 
         // Get the IP address of the first bridge in the list
         let ip_address = &body[0].internalipaddress;
-        // let ip_address = "192.168.1.83";
 
         // Return the IP address as a String
         Ok(ip_address.to_string())
