@@ -1,4 +1,4 @@
-# Start with the golang image
+# Start with the rust image
 FROM rust:alpine AS builder
 
 # Update and upgrade the image
@@ -14,7 +14,22 @@ COPY src/ /app/src/
 COPY secrets/ /app/secrets/
 
 # Build and install the app
-RUN cargo install --path .
+RUN cargo build --release
+
+# Create a new stage for the final image
+FROM alpine:latest
+
+# Update and upgrade the image
+RUN apk update && apk upgrade
+
+# Set the Current Working Directory inside the container
+WORKDIR /app
+
+# Copy the compiled binary from the builder stage
+COPY --from=builder /app/target/release/rust-backend /app/rust-backend
+
+# Copy the secrets directory
+COPY --from=builder /app/secrets /app/secrets
 
 # Command to run the executable
-ENTRYPOINT [ "rust-backend" ]
+ENTRYPOINT [ "/app/rust-backend" ]
