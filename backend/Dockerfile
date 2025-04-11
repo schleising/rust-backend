@@ -11,7 +11,6 @@ WORKDIR /app
 # Copy source and secret files
 COPY Cargo.toml /app/
 COPY src/ /app/src/
-COPY secrets/ /app/secrets/
 
 # Build and install the app
 RUN cargo build --release
@@ -29,7 +28,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/rust-backend /app/rust-backend
 
 # Copy the secrets directory
-COPY --from=builder /app/secrets /app/secrets
+COPY secrets /app/secrets
 
 # Command to run the executable
 ENTRYPOINT [ "/app/rust-backend" ]
