@@ -232,17 +232,19 @@ impl Sensors {
         let insert_options = InsertManyOptions::builder().ordered(false).build(); // Continue on error
 
         // Insert the temperatures into the MongoDB collection
-        match self.sensors_collection
+        match self
+            .sensors_collection
             .insert_many(temperatures)
             .with_options(insert_options)
-            .run() {
-                Ok(result) => {
-                    log::debug!("Inserted {} documents", result.inserted_ids.len());
-                }
-                Err(error) => {
-                    log::trace!("Error inserting documents: {}", error);
-                }
+            .run()
+        {
+            Ok(result) => {
+                log::debug!("Inserted {} documents", result.inserted_ids.len());
             }
+            Err(error) => {
+                log::trace!("Error inserting documents: {}", error);
+            }
+        }
 
         // Return Ok
         Ok(())
