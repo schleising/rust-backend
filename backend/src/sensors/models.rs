@@ -9,14 +9,12 @@ pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
 pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
 pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct HueBridge {
-    id: String,
     pub internalipaddress: String,
-    port: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ProductData {
     model_id: String,
     manufacturer_name: String,
@@ -27,19 +25,19 @@ pub struct ProductData {
     hardware_platform_type: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Metadata {
     pub name: String,
     archetype: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Service {
     pub rid: String,
     pub rtype: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
     id_v1: Option<String>,
@@ -50,23 +48,23 @@ pub struct Device {
     type_: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeviceList {
     pub data: Vec<Device>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TemperatureReport {
     pub changed: chrono::DateTime<chrono::Utc>,
     pub temperature: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Temperature {
     pub temperature_report: TemperatureReport,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HueTemperatureData {
     #[serde(rename = "type")]
     type_: String,
@@ -75,12 +73,12 @@ pub struct HueTemperatureData {
     pub temperature: Temperature,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HueTemperatureList {
     pub data: Vec<HueTemperatureData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TemperatureData {
     pub device_name: String,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
