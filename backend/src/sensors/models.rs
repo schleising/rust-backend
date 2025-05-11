@@ -14,71 +14,51 @@ pub struct HueBridge {
     pub internalipaddress: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ProductData {
-    model_id: String,
-    manufacturer_name: String,
-    product_name: String,
-    product_archetype: String,
-    certified: bool,
-    software_version: String,
-    hardware_platform_type: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Metadata {
     pub name: String,
-    archetype: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Service {
     pub rid: String,
     pub rtype: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Device {
-    pub id: String,
-    id_v1: Option<String>,
-    product_data: ProductData,
     pub metadata: Metadata,
     pub services: Vec<Service>,
-    #[serde(rename = "type")]
-    type_: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct DeviceList {
     pub data: Vec<Device>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct TemperatureReport {
     pub changed: chrono::DateTime<chrono::Utc>,
     pub temperature: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Temperature {
     pub temperature_report: TemperatureReport,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct HueTemperatureData {
-    #[serde(rename = "type")]
-    type_: String,
     pub id: String,
-    enabled: bool,
     pub temperature: Temperature,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct HueTemperatureList {
     pub data: Vec<HueTemperatureData>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct TemperatureData {
     pub device_name: String,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
