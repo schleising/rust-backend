@@ -167,9 +167,10 @@ impl Sensors {
                     .services
                     .iter()
                     .find(|service| service.rtype == "temperature")
-                    .expect("Critical error: no temperature service found despite filtering")
-                    .rid
-                    .clone(),
+                    .map_or_else(|| {
+                        log::error!("No temperature service found");
+                        "Unknown".to_string()
+                    }, |service| service.rid.clone()),
                 name: device.metadata.name.clone(),
             })
             .collect();
@@ -211,10 +212,12 @@ impl Sensors {
                 device_name: self
                     .sensors
                     .iter()
+                    .filter(|sensor| sensor.id != "Unknown")
                     .find(|sensor| sensor.id == temperature.id)
-                    .expect("Critical error: no sensor found for temperature")
-                    .name
-                    .clone(),
+                    .map_or_else(|| {
+                        log::error!("Sensor ID not found: {}", temperature.id);
+                        "Unknown".to_string()
+                    }, |sensor| sensor.name.clone()),
                 online: true,
                 timestamp: temperature.temperature.temperature_report.changed,
                 temperature: temperature.temperature.temperature_report.temperature,
