@@ -9,7 +9,7 @@ use mongodb::{
     options::{IndexOptions, InsertManyOptions},
 };
 
-use crate::sensors::models::{
+use crate::sensor_control::models::{
     DeviceList, HUE_APPLICATION_KEY_HEADER, HUE_DEVICE_URL, HUE_DISCOVERY_URL, HUE_TEMPERATURE_URL,
     HueBridge, HueTemperatureList, TemperatureData,
 };
@@ -48,7 +48,7 @@ impl Sensors {
         log::trace!("Bridge IP: {}", bridge_ip_address);
 
         // Get the sensors from the Hue bridge
-        let sensor_list = Sensors::get_sensors(&bridge_ip_address, &hue_application_key)?;
+        let sensor_list = Sensors::get_sensors(&bridge_ip_address, hue_application_key)?;
         log::trace!("Sensors: {:?}", sensor_list);
 
         // Connect to the MongoDB database
@@ -76,7 +76,7 @@ impl Sensors {
             bridge_ip_address,
             hue_application_key: hue_application_key.to_string(),
             sensors: sensor_list,
-            client: client,
+            client,
         };
 
         // Return the Sensors struct
@@ -85,7 +85,7 @@ impl Sensors {
 
     pub fn run(self) -> thread::JoinHandle<()> {
         // Spawn a new thread to get the temperature
-        let handle = thread::spawn(move || {
+        thread::spawn(move || {
             loop {
                 match self.get_temperatures() {
                     Ok(temperatures) => {
@@ -106,10 +106,7 @@ impl Sensors {
 
                 thread::sleep(std::time::Duration::from_secs(60));
             }
-        });
-
-        // Return the JoinHandle
-        return handle;
+        })
     }
 
     fn get_bridge() -> Result<String, SensorError> {

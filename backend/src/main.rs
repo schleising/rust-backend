@@ -1,10 +1,7 @@
 use std::io::Write;
 
-use env_logger;
-use log;
-
-mod sensors;
-use sensors::sensors::Sensors;
+mod sensor_control;
+use sensor_control::sensors::Sensors;
 
 fn main() {
     // Initialize the logger
