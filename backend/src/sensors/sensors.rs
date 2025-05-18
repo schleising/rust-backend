@@ -33,8 +33,11 @@ pub struct Sensors {
     bridge_ip_address: String,
     hue_application_key: String,
     sensors: Vec<Sensor>,
-    sensors_collection: mongodb::sync::Collection<TemperatureData>,
+    client: mongodb::sync::Client,
 }
+
+const DATABASE_NAME: &str = "web_database";
+const COLLECTION_NAME: &str = "sensor_data";
 
 impl Sensors {
     pub fn new(hue_application_key: &str) -> Result<Self, SensorError> {
@@ -52,11 +55,10 @@ impl Sensors {
         let client = mongodb::sync::Client::with_uri_str("mongodb://host.docker.internal:27017")?;
 
         // Get the database
-        let database = client.database("web_database");
+        let database = client.database(DATABASE_NAME);
 
         // Get the collection
-        let collection: mongodb::sync::Collection<TemperatureData> =
-            database.collection("sensor_data");
+        let collection = database.collection::<TemperatureData>(COLLECTION_NAME);
 
         // Create a compound unique index on the device_name and timestamp fields
         let index_model = IndexModel::builder()
@@ -74,7 +76,7 @@ impl Sensors {
             bridge_ip_address,
             hue_application_key: hue_application_key.to_string(),
             sensors: sensor_list,
-            sensors_collection: collection,
+            client: client,
         };
 
         // Return the Sensors struct
@@ -167,10 +169,13 @@ impl Sensors {
                     .services
                     .iter()
                     .find(|service| service.rtype == "temperature")
-                    .map_or_else(|| {
-                        log::error!("No temperature service found");
-                        "Unknown".to_string()
-                    }, |service| service.rid.clone()),
+                    .map_or_else(
+                        || {
+                            log::error!("No temperature service found");
+                            "Unknown".to_string()
+                        },
+                        |service| service.rid.clone(),
+                    ),
                 name: device.metadata.name.clone(),
             })
             .collect();
@@ -214,10 +219,13 @@ impl Sensors {
                     .iter()
                     .filter(|sensor| sensor.id != "Unknown")
                     .find(|sensor| sensor.id == temperature.id)
-                    .map_or_else(|| {
-                        log::error!("Sensor ID not found: {}", temperature.id);
-                        "Unknown".to_string()
-                    }, |sensor| sensor.name.clone()),
+                    .map_or_else(
+                        || {
+                            log::error!("Sensor ID not found: {}", temperature.id);
+                            "Unknown"
+                        },
+                        |sensor| &sensor.name,
+                    ),
                 online: true,
                 timestamp: temperature.temperature.temperature_report.changed,
                 temperature: temperature.temperature.temperature_report.temperature,
@@ -234,9 +242,14 @@ impl Sensors {
 
         let insert_options = InsertManyOptions::builder().ordered(false).build(); // Continue on error
 
+        // Get the MongoDB collection
+        let collection = self
+            .client
+            .database(DATABASE_NAME)
+            .collection::<TemperatureData>(COLLECTION_NAME);
+
         // Insert the temperatures into the MongoDB collection
-        match self
-            .sensors_collection
+        match collection
             .insert_many(temperatures)
             .with_options(insert_options)
             .run()
