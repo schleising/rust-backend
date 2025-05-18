@@ -166,16 +166,47 @@ impl Sensors {
                     .services
                     .iter()
                     .find(|service| service.rtype == "temperature")
-                    .map_or_else(
-                        || {
-                            log::error!("No temperature service found");
-                            "Unknown".to_string()
-                        },
-                        |service| service.rid.clone(),
-                    ),
+                    .map(|service| service.rid.clone())
+                    .unwrap_or_else(|| {
+                        log::warn!(
+                            "No temperature service found for device: {}",
+                            device.metadata.name
+                        );
+                        String::new()
+                    }),
                 name: device.metadata.name.clone(),
             })
             .collect();
+
+        // Find length of the name of the sensor with the longest name
+        let max_name_length = sensors
+            .iter()
+            .map(|sensor| sensor.name.len())
+            .max()
+            .unwrap_or(0);
+
+        // Log the sensors
+        log::info!("Sensors:");
+        log::info!(
+            "{}{:width$} - {:36}",
+            "Name",
+            "",
+            "Sensor ID",
+            width = max_name_length - "Name".len()
+        );
+        for sensor in &sensors {
+            log::info!(
+                "{:width$} - {}",
+                sensor.name,
+                sensor.id,
+                width = max_name_length
+            );
+        }
+
+        // Log the number of sensors
+        log::info!("Number of sensors: {}", sensors.len());
+
+        log::trace!("Sensors: {:?}", sensors);
 
         // Return the vector of Sensor structs
         Ok(sensors)
@@ -214,15 +245,12 @@ impl Sensors {
                 device_name: self
                     .sensors
                     .iter()
-                    .filter(|sensor| sensor.id != "Unknown")
                     .find(|sensor| sensor.id == temperature.id)
-                    .map_or_else(
-                        || {
-                            log::error!("Sensor ID not found: {}", temperature.id);
-                            "Unknown"
-                        },
-                        |sensor| &sensor.name,
-                    ),
+                    .map(|sensor| sensor.name.as_str())
+                    .unwrap_or_else(|| {
+                        log::warn!("Sensor not found for temperature data: {}", temperature.id);
+                        "Unknown"
+                    }),
                 online: true,
                 timestamp: temperature.temperature.temperature_report.changed,
                 temperature: temperature.temperature.temperature_report.temperature,
