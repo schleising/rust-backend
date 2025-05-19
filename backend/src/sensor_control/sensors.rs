@@ -1,26 +1,14 @@
 use std::thread;
 
-use thiserror::Error;
-
 use ureq::tls::TlsConfig;
 
-use mongodb::{
-    IndexModel,
-    options::{IndexOptions, InsertManyOptions},
-};
+use crate::sensor_control::errors::SensorError;
+use crate::sensor_control::temp_writer::TempWriter;
 
 use crate::sensor_control::models::{
     DeviceList, HUE_APPLICATION_KEY_HEADER, HUE_DEVICE_URL, HUE_DISCOVERY_URL, HUE_TEMPERATURE_URL,
     HueBridge, HueTemperatureList, TemperatureData,
 };
-
-#[derive(Error, Debug)]
-pub enum SensorError {
-    #[error("Ureq Request Error: {0}")]
-    UreqError(#[from] ureq::Error),
-    #[error("MongoDB Error: {0}")]
-    MongoDBError(#[from] mongodb::error::Error),
-}
 
 #[derive(Debug)]
 pub struct Sensor {
@@ -29,54 +17,39 @@ pub struct Sensor {
 }
 
 #[derive(Debug)]
-pub struct Sensors {
+pub struct Sensors<T>
+where
+    T: TempWriter,
+{
     bridge_ip_address: String,
     hue_application_key: String,
     sensors: Vec<Sensor>,
-    client: mongodb::sync::Client,
+    temp_writer: T,
 }
 
-const DATABASE_NAME: &str = "web_database";
-const COLLECTION_NAME: &str = "sensor_data";
+const HUE_DOMAIN: &str = "hue-bridge";
 
-impl Sensors {
-    pub fn new(hue_application_key: &str) -> Result<Self, SensorError> {
+impl<T> Sensors<T>
+where
+    T: TempWriter + std::marker::Send + std::marker::Sync + 'static,
+{
+    pub fn new(hue_application_key: &str, temp_writer: T) -> Result<Self, SensorError> {
         log::trace!("Creating new Sensors");
 
         // Get the IP address of the Hue bridge
-        let bridge_ip_address = Sensors::get_bridge()?;
-        log::trace!("Bridge IP: {}", bridge_ip_address);
+        let bridge_ip_address = Sensors::<T>::get_bridge()?;
+        log::debug!("Bridge IP: {}", bridge_ip_address);
 
         // Get the sensors from the Hue bridge
-        let sensor_list = Sensors::get_sensors(&bridge_ip_address, hue_application_key)?;
+        let sensor_list = Sensors::<T>::get_sensors(&bridge_ip_address, hue_application_key)?;
         log::trace!("Sensors: {:?}", sensor_list);
-
-        // Connect to the MongoDB database
-        let client = mongodb::sync::Client::with_uri_str("mongodb://host.docker.internal:27017")?;
-
-        // Get the database
-        let database = client.database(DATABASE_NAME);
-
-        // Get the collection
-        let collection = database.collection::<TemperatureData>(COLLECTION_NAME);
-
-        // Create a compound unique index on the device_name and timestamp fields
-        let index_model = IndexModel::builder()
-            .keys(mongodb::bson::doc! {
-                "device_name": 1,
-                "timestamp": 1,
-            })
-            .options(IndexOptions::builder().unique(true).build())
-            .build();
-
-        collection.create_index(index_model).run()?;
 
         // Create a new Sensors struct
         let sensors = Sensors {
             bridge_ip_address,
             hue_application_key: hue_application_key.to_string(),
             sensors: sensor_list,
-            client,
+            temp_writer,
         };
 
         // Return the Sensors struct
@@ -89,7 +62,7 @@ impl Sensors {
             loop {
                 match self.get_temperatures() {
                     Ok(temperatures) => {
-                        log::debug!("Temperatures: {:?}", temperatures);
+                        log::trace!("Temperatures: {:?}", temperatures);
                         match self.store_temperatures(temperatures) {
                             Ok(_) => {
                                 log::debug!("Stored temperatures");
@@ -110,7 +83,17 @@ impl Sensors {
     }
 
     fn get_bridge() -> Result<String, SensorError> {
-        log::trace!("Getting bridge");
+        log::info!("Getting bridge");
+
+        // Try getting the config from hue-bridge
+        let response = ureq::get(format!("http://{}/api/0/config", HUE_DOMAIN)).call()?;
+
+        if response.status() == 200 {
+            log::info!("Got response from hue-bridge");
+            return Ok(HUE_DOMAIN.to_string());
+        }
+
+        log::info!("No response from hue-bridge, trying discovery");
 
         // Make a GET request to the Hue discovery URL
         let mut response = ureq::get(HUE_DISCOVERY_URL).call()?;
@@ -133,7 +116,7 @@ impl Sensors {
         bridge_ip_address: &str,
         hue_application_key: &str,
     ) -> Result<Vec<Sensor>, SensorError> {
-        log::trace!("Getting sensors");
+        log::debug!("Getting sensors");
         let hue_device_url = format!("https://{}{}", bridge_ip_address, HUE_DEVICE_URL);
         log::debug!("Hue Device URL: {}", hue_device_url);
 
@@ -213,7 +196,7 @@ impl Sensors {
     }
 
     fn get_temperatures(&self) -> Result<Vec<TemperatureData>, SensorError> {
-        log::trace!("Getting temperatures");
+        log::debug!("Getting temperatures");
 
         let hue_temperature_url =
             format!("https://{}{}", self.bridge_ip_address, HUE_TEMPERATURE_URL);
@@ -263,29 +246,10 @@ impl Sensors {
     }
 
     fn store_temperatures(&self, temperatures: Vec<TemperatureData>) -> Result<(), SensorError> {
-        log::trace!("Storing temperatures");
+        log::debug!("Storing temperatures");
 
-        let insert_options = InsertManyOptions::builder().ordered(false).build(); // Continue on error
-
-        // Get the MongoDB collection
-        let collection = self
-            .client
-            .database(DATABASE_NAME)
-            .collection::<TemperatureData>(COLLECTION_NAME);
-
-        // Insert the temperatures into the MongoDB collection
-        match collection
-            .insert_many(temperatures)
-            .with_options(insert_options)
-            .run()
-        {
-            Ok(result) => {
-                log::debug!("Inserted {} documents", result.inserted_ids.len());
-            }
-            Err(error) => {
-                log::trace!("Error inserting documents: {}", error);
-            }
-        }
+        // Store the temperatures in the database
+        self.temp_writer.write_temps(temperatures)?;
 
         // Return Ok
         Ok(())

@@ -1,7 +1,13 @@
 use std::io::Write;
 
 mod sensor_control;
+use sensor_control::database_writer::DatabaseWriter;
+use sensor_control::models::TemperatureData;
 use sensor_control::sensors::Sensors;
+
+const DATABASE_URL: &str = "mongodb://host.docker.internal:27017";
+const DATABASE_NAME: &str = "web_database";
+const COLLECTION_NAME: &str = "sensor_data";
 
 fn main() {
     // Initialize the logger
@@ -31,8 +37,25 @@ fn main() {
         }
     };
 
+    log::info!("Creating DatabaseWriter");
+
+    let data_writer = match DatabaseWriter::new::<TemperatureData>(
+        DATABASE_URL,
+        DATABASE_NAME,
+        COLLECTION_NAME,
+    ) {
+        Ok(writer) => writer,
+        Err(error) => {
+            log::error!("Error creating DatabaseWriter: {}", error);
+            return;
+        }
+    };
+
+    log::info!("Created DatabaseWriter");
+    log::info!("Creating Sensors");
+
     // Create a new Sensors struct
-    let sensors = match Sensors::new(&hue_application_key) {
+    let sensors = match Sensors::new(&hue_application_key, data_writer) {
         // If the IP address was successfully retrieved, store it in the variable
         Ok(sensors) => sensors,
         // If there was an error retrieving the IP address, print the error message and exit
@@ -42,9 +65,18 @@ fn main() {
         }
     };
 
+    log::info!("Created Sensors");
+    log::info!("Starting Sensors");
+
     // Run the sensors
     let handle = sensors.run();
 
+    log::info!("Sensors started");
+    log::info!("Waiting for Sensors to finish");
+
     // Wait for the thread to finish
     handle.join().unwrap();
+
+    log::info!("Sensors finished");
+    log::info!("Exiting");
 }
