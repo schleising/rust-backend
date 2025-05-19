@@ -1,7 +1,6 @@
-use serde::Serialize;
+use super::errors::SensorError;
+use super::models::TemperatureData;
 
-use crate::sensor_control::errors::SensorError;
-
-pub trait TempWriter {
-    fn write_temps<T: Serialize + Send + Sync>(&self, data: Vec<T>) -> Result<(), SensorError>;
+pub trait TempWriter: Send {
+    fn write_temps(&self, data: Vec<TemperatureData>) -> Result<(), SensorError>;
 }

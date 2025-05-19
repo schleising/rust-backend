@@ -2,12 +2,16 @@ use std::io::Write;
 
 mod sensor_control;
 use sensor_control::database_writer::DatabaseWriter;
-use sensor_control::models::TemperatureData;
+use sensor_control::file_writer::FileWriter;
 use sensor_control::sensors::Sensors;
+use sensor_control::temp_writer::TempWriter;
 
 const DATABASE_URL: &str = "mongodb://host.docker.internal:27017";
+// const DATABASE_URL: &str = "mongodb://localhost:27017";
 const DATABASE_NAME: &str = "web_database";
 const COLLECTION_NAME: &str = "sensor_data";
+
+const WRITE_TO_FILE: bool = false;
 
 fn main() {
     // Initialize the logger
@@ -37,21 +41,33 @@ fn main() {
         }
     };
 
-    log::info!("Creating DatabaseWriter");
+    log::info!("Creating Writer");
 
-    let data_writer = match DatabaseWriter::new::<TemperatureData>(
-        DATABASE_URL,
-        DATABASE_NAME,
-        COLLECTION_NAME,
-    ) {
-        Ok(writer) => writer,
-        Err(error) => {
-            log::error!("Error creating DatabaseWriter: {}", error);
-            return;
-        }
-    };
+    let data_writer: Box<dyn TempWriter>;
 
-    log::info!("Created DatabaseWriter");
+    if WRITE_TO_FILE {
+        // Create a new FileWriter
+        data_writer = match FileWriter::new("sensor_data.csv") {
+            Ok(writer) => Box::new(writer),
+            Err(error) => {
+                log::error!("Error creating FileWriter: {}", error);
+                return;
+            }
+        };
+
+        log::info!("Created FileWriter");
+    } else {
+        data_writer = match DatabaseWriter::new(DATABASE_URL, DATABASE_NAME, COLLECTION_NAME) {
+            Ok(writer) => Box::new(writer),
+            Err(error) => {
+                log::error!("Error creating DatabaseWriter: {}", error);
+                return;
+            }
+        };
+
+        log::info!("Created DatabaseWriter");
+    }
+
     log::info!("Creating Sensors");
 
     // Create a new Sensors struct

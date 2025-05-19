@@ -2,10 +2,9 @@ use std::thread;
 
 use ureq::tls::TlsConfig;
 
-use crate::sensor_control::errors::SensorError;
-use crate::sensor_control::temp_writer::TempWriter;
-
-use crate::sensor_control::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
+use super::errors::SensorError;
+use super::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
+use super::temp_writer::TempWriter;
 
 #[derive(Debug)]
 pub struct Sensor {
@@ -13,15 +12,11 @@ pub struct Sensor {
     name: String,
 }
 
-#[derive(Debug)]
-pub struct Sensors<T>
-where
-    T: TempWriter,
-{
+pub struct Sensors {
     bridge_ip_address: String,
     hue_application_key: String,
     sensors: Vec<Sensor>,
-    temp_writer: T,
+    temp_writer: Box<dyn TempWriter + Send>,
 }
 
 const HUE_DOMAIN: &str = "hue-bridge";
@@ -30,19 +25,19 @@ pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
 pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
 pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
-impl<T> Sensors<T>
-where
-    T: TempWriter + std::marker::Send + std::marker::Sync + 'static,
-{
-    pub fn new(hue_application_key: &str, temp_writer: T) -> Result<Self, SensorError> {
+impl Sensors {
+    pub fn new(
+        hue_application_key: &str,
+        temp_writer: Box<dyn TempWriter + Send>,
+    ) -> Result<Self, SensorError> {
         log::trace!("Creating new Sensors");
 
         // Get the IP address of the Hue bridge
-        let bridge_ip_address = Sensors::<T>::get_bridge()?;
+        let bridge_ip_address = Sensors::get_bridge()?;
         log::debug!("Bridge IP: {}", bridge_ip_address);
 
         // Get the sensors from the Hue bridge
-        let sensor_list = Sensors::<T>::get_sensors(&bridge_ip_address, hue_application_key)?;
+        let sensor_list = Sensors::get_sensors(&bridge_ip_address, hue_application_key)?;
         log::trace!("Sensors: {:?}", sensor_list);
 
         // Create a new Sensors struct

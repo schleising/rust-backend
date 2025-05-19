@@ -1,12 +1,11 @@
-use serde::Serialize;
-
-use crate::sensor_control::errors::SensorError;
-use crate::sensor_control::temp_writer::TempWriter;
-
 use mongodb::{
     IndexModel,
     options::{IndexOptions, InsertManyOptions},
 };
+
+use super::errors::SensorError;
+use super::models::TemperatureData;
+use super::temp_writer::TempWriter;
 
 pub struct DatabaseWriter {
     client: mongodb::sync::Client,
@@ -15,14 +14,11 @@ pub struct DatabaseWriter {
 }
 
 impl DatabaseWriter {
-    pub fn new<T>(
+    pub fn new(
         database_url: &str,
         database_name: &str,
         collection_name: &str,
-    ) -> Result<Self, SensorError>
-    where
-        T: Serialize + Send + Sync,
-    {
+    ) -> Result<Self, SensorError> {
         // Connect to the MongoDB database
         let client = mongodb::sync::Client::with_uri_str(database_url)?;
 
@@ -30,7 +26,7 @@ impl DatabaseWriter {
         let database = client.database(database_name);
 
         // Get the collection
-        let collection = database.collection::<T>(collection_name);
+        let collection = database.collection::<TemperatureData>(collection_name);
 
         // Create a compound unique index on the device_name and timestamp fields
         let index_model = IndexModel::builder()
@@ -52,10 +48,7 @@ impl DatabaseWriter {
 }
 
 impl TempWriter for DatabaseWriter {
-    fn write_temps<T>(&self, data: Vec<T>) -> Result<(), SensorError>
-    where
-        T: Serialize + Send + Sync,
-    {
+    fn write_temps(&self, data: Vec<TemperatureData>) -> Result<(), SensorError> {
         log::debug!("Storing temperatures");
 
         let insert_options = InsertManyOptions::builder().ordered(false).build(); // Continue on error
@@ -64,7 +57,7 @@ impl TempWriter for DatabaseWriter {
         let collection = self
             .client
             .database(&self.database_name)
-            .collection::<T>(&self.collection_name);
+            .collection::<TemperatureData>(&self.collection_name);
 
         // Insert the temperatures into the MongoDB collection
         match collection
