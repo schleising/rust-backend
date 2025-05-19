@@ -5,10 +5,7 @@ use ureq::tls::TlsConfig;
 use crate::sensor_control::errors::SensorError;
 use crate::sensor_control::temp_writer::TempWriter;
 
-use crate::sensor_control::models::{
-    DeviceList, HUE_APPLICATION_KEY_HEADER, HUE_DEVICE_URL, HUE_DISCOVERY_URL, HUE_TEMPERATURE_URL,
-    HueBridge, HueTemperatureList, TemperatureData,
-};
+use crate::sensor_control::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
 
 #[derive(Debug)]
 pub struct Sensor {
@@ -28,6 +25,10 @@ where
 }
 
 const HUE_DOMAIN: &str = "hue-bridge";
+pub const HUE_DISCOVERY_URL: &str = "https://discovery.meethue.com/";
+pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
+pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
+pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
 impl<T> Sensors<T>
 where

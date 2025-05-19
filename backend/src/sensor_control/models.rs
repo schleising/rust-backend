@@ -4,11 +4,6 @@ use chrono;
 use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
 
-pub const HUE_DISCOVERY_URL: &str = "https://discovery.meethue.com/";
-pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
-pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
-pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
-
 #[derive(Deserialize)]
 pub struct HueBridge {
     pub internalipaddress: String,
