@@ -12,11 +12,11 @@ pub struct Sensor {
     name: String,
 }
 
-pub struct Sensors {
+pub struct Sensors<T> {
     bridge_ip_address: String,
     hue_application_key: String,
     sensors: Vec<Sensor>,
-    temp_writer: Box<dyn TempWriter + Send>,
+    temp_writer: T,
 }
 
 const HUE_DOMAIN: &str = "hue-bridge";
@@ -25,19 +25,19 @@ pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
 pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
 pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
-impl Sensors {
-    pub fn new(
-        hue_application_key: &str,
-        temp_writer: Box<dyn TempWriter + Send>,
-    ) -> Result<Self, SensorError> {
+impl<T> Sensors<T>
+where
+    T: TempWriter + Send + 'static,
+{
+    pub fn new(hue_application_key: &str, temp_writer: T) -> Result<Self, SensorError> {
         log::trace!("Creating new Sensors");
 
         // Get the IP address of the Hue bridge
-        let bridge_ip_address = Sensors::get_bridge()?;
+        let bridge_ip_address = Sensors::<T>::get_bridge()?;
         log::debug!("Bridge IP: {}", bridge_ip_address);
 
         // Get the sensors from the Hue bridge
-        let sensor_list = Sensors::get_sensors(&bridge_ip_address, hue_application_key)?;
+        let sensor_list = Sensors::<T>::get_sensors(&bridge_ip_address, hue_application_key)?;
         log::trace!("Sensors: {:?}", sensor_list);
 
         // Create a new Sensors struct
@@ -249,5 +249,32 @@ impl Sensors {
 
         // Return Ok
         Ok(())
+    }
+}
+
+// Test the Sensors struct using a FileWriter
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sensor_control::file_writer::FileWriter;
+
+    #[test]
+    fn test_sensors() {
+        // Create a new Sensors struct
+        // Read the Hue Application Key from the file
+        let hue_application_key = match std::fs::read_to_string("secrets/hue_application_key.txt") {
+            Ok(key) => key,
+            Err(error) => {
+                log::error!("Error reading Hue Application Key: {}", error);
+                return;
+            }
+        };
+        let temp_writer = FileWriter::new("test.csv").unwrap();
+        let sensors = Sensors::new(&hue_application_key, temp_writer).unwrap();
+        // Run the sensors
+        let handle = sensors.run();
+
+        // Wait for the thread to finish
+        handle.join().unwrap();
     }
 }

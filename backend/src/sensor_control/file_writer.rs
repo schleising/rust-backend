@@ -9,6 +9,7 @@ pub struct FileWriter {
 }
 
 impl FileWriter {
+    #[allow(dead_code)]
     pub fn new(filename: &str) -> Result<Self, SensorError> {
         // If the file doesn't exist, create it
         if !Path::new(filename).exists() {
