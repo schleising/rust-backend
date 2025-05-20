@@ -16,6 +16,7 @@ pub struct Sensor {
     name: String,
 }
 
+#[derive(Debug)]
 pub struct Sensors<T> {
     bridge_ip_address: String,
     hue_application_key: String,
