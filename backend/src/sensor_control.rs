@@ -1,4 +1,4 @@
-pub mod models;
+mod models;
 pub mod sensors;
 
 pub mod database_writer;

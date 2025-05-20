@@ -1,6 +1,5 @@
 use std::str;
 
-use chrono;
 use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
 
