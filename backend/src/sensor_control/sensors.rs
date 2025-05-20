@@ -1,6 +1,10 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use ureq::tls::TlsConfig;
+
+use signal_hook::flag::register;
 
 use super::errors::SensorError;
 use super::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
@@ -52,10 +56,15 @@ where
         Ok(sensors)
     }
 
-    pub fn run(self) -> thread::JoinHandle<()> {
+    pub fn run(self) -> Result<thread::JoinHandle<()>, SensorError> {
+        // Register signal handlers for SIGTERM and SIGINT
+        let term = Arc::new(AtomicBool::new(false));
+        register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
+        register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
+
         // Spawn a new thread to get the temperature
-        thread::spawn(move || {
-            loop {
+        Ok(thread::spawn(move || {
+            while !term.load(Ordering::Relaxed) {
                 match self.get_temperatures() {
                     Ok(temperatures) => {
                         log::trace!("Temperatures: {:?}", temperatures);
@@ -73,9 +82,9 @@ where
                     }
                 }
 
-                thread::sleep(std::time::Duration::from_secs(60));
+                thread::sleep(std::time::Duration::from_secs(1));
             }
-        })
+        }))
     }
 
     fn get_bridge() -> Result<String, SensorError> {
@@ -272,7 +281,15 @@ mod tests {
         let temp_writer = FileWriter::new("test.csv").unwrap();
         let sensors = Sensors::new(&hue_application_key, temp_writer).unwrap();
         // Run the sensors
-        let handle = sensors.run();
+        let handle = match sensors.run() {
+            // If the thread was successfully spawned, store it in the variable
+            Ok(handle) => handle,
+            // If there was an error spawning the thread, print the error message and exit
+            Err(error) => {
+                log::error!("Error starting sensors: {}", error);
+                return;
+            }
+        };
 
         // Wait for the thread to finish
         handle.join().unwrap();

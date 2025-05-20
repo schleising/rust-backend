@@ -65,7 +65,15 @@ fn main() {
     log::info!("Starting Sensors");
 
     // Run the sensors
-    let handle = sensors.run();
+    let handle = match sensors.run() {
+        // If the thread was successfully spawned, store it in the variable
+        Ok(handle) => handle,
+        // If there was an error spawning the thread, print the error message and exit
+        Err(error) => {
+            log::error!("Error starting sensors: {}", error);
+            return;
+        }
+    };
 
     log::info!("Sensors started");
     log::info!("Waiting for Sensors to finish");
