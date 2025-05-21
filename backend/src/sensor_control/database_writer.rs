@@ -19,8 +19,11 @@ impl DatabaseWriter {
         database_name: &str,
         collection_name: &str,
     ) -> Result<Self, SensorError> {
-        // Connect to the MongoDB database
-        let client = mongodb::sync::Client::with_uri_str(database_url)?;
+        // Connect to the MongoDB database setting a timeout of 5 seconds
+        let mut client_options = mongodb::options::ClientOptions::parse(database_url).run()?;
+        client_options.server_selection_timeout = Some(std::time::Duration::new(5, 0));
+        client_options.connect_timeout = Some(std::time::Duration::new(5, 0));
+        let client = mongodb::sync::Client::with_options(client_options)?;
 
         // Get the database
         let database = client.database(database_name);
