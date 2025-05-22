@@ -11,7 +11,7 @@ rustup target add --toolchain stable-aarch64-unknown-linux-musl aarch64-unknown-
 
 # Install the musl toolchain from homebrew
 brew tap messense/macos-cross-toolchains
-brew install aarch64-unknown-linux-gnu
+brew install aarch64-unknown-linux-musl
 ```
 
 You will also need to edit (or create) the `~/.cargo/config.toml` file and add the following lines:
