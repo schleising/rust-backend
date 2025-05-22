@@ -6,6 +6,7 @@ mod database;
 use database::client::MongoClient;
 
 mod sensor_control;
+use mongodb::{IndexModel, options::IndexOptions};
 use sensor_control::sensors::Sensors;
 
 const DATABASE_NAME: &str = "web_database";
@@ -51,6 +52,27 @@ fn main() {
             return;
         }
     };
+
+    // Create a compound unique index on the device_name and timestamp fields
+    let index_model = IndexModel::builder()
+        .keys(mongodb::bson::doc! {
+            "device_name": 1,
+            "timestamp": 1,
+        })
+        .options(IndexOptions::builder().unique(true).build())
+        .build();
+
+    match mongo_client
+        .get_collection()
+        .create_index(index_model)
+        .run()
+    {
+        Ok(_) => log::info!("Index created successfully"),
+        Err(e) => {
+            log::error!("Error creating index: {}", e);
+            return;
+        }
+    }
 
     log::info!("Created MongoClient");
 

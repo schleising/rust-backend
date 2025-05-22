@@ -61,7 +61,10 @@ pub struct MongoClient<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T> MongoClient<T> {
+impl<T> MongoClient<T>
+where
+    T: Serialize + Send + Sync + 'static,
+{
     /// Creates a new MongoClient instance with the specified database and collection names.
     pub fn new(database_name: &str, collection_name: &str) -> Result<Self, DatabaseError> {
         Ok(MongoClient {
@@ -70,6 +73,13 @@ impl<T> MongoClient<T> {
             collection_name: collection_name.to_string(),
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// Get the collection from the MongoDB client
+    pub fn get_collection(&self) -> mongodb::sync::Collection<T> {
+        self.client
+            .database(&self.database_name)
+            .collection::<T>(&self.collection_name)
     }
 }
 
