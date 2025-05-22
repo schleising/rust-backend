@@ -53,8 +53,8 @@ pub struct HueTemperatureList {
 }
 
 #[derive(Debug, Serialize)]
-pub struct TemperatureData<'a> {
-    pub device_name: &'a str,
+pub struct TemperatureData {
+    pub device_name: String,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub online: bool,

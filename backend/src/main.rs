@@ -1,10 +1,13 @@
 use std::io::Write;
 
+mod datastore;
+
+mod database;
+use database::client::MongoClient;
+
 mod sensor_control;
-use sensor_control::database_writer::DatabaseWriter;
 use sensor_control::sensors::Sensors;
 
-const DATABASE_URL: &str = "mongodb://localhost:27017";
 const DATABASE_NAME: &str = "web_database";
 const COLLECTION_NAME: &str = "sensor_data";
 
@@ -25,15 +28,6 @@ fn main() {
         })
         .init();
 
-    // Read the MongoDB URL from the environment variable
-    let database_url = match std::env::var("MONGO_URL") {
-        Ok(url) => url,
-        Err(_) => {
-            log::debug!("MONGO_URL environment variable not set, using default");
-            DATABASE_URL.to_string()
-        }
-    };
-
     log::info!("Reading Hue Application Key from file");
 
     // Read the Hue Application Key from the file
@@ -47,19 +41,23 @@ fn main() {
 
     log::info!("Creating Writer");
 
-    let data_writer = match DatabaseWriter::new(&database_url, DATABASE_NAME, COLLECTION_NAME) {
-        Ok(writer) => writer,
+    // Create a new MongoClient struct
+    let mongo_client = match MongoClient::new(DATABASE_NAME, COLLECTION_NAME) {
+        // If the MongoClient was successfully created, store it in the variable
+        Ok(client) => client,
+        // If there was an error creating the MongoClient, print the error message and exit
         Err(error) => {
-            log::error!("Error creating DatabaseWriter: {}", error);
+            log::error!("Error creating MongoClient: {}", error);
             return;
         }
     };
 
-    log::info!("Created DatabaseWriter");
+    log::info!("Created MongoClient");
+
     log::info!("Creating Sensors");
 
     // Create a new Sensors struct
-    let sensors = match Sensors::new(&hue_application_key, data_writer) {
+    let sensors = match Sensors::new(&hue_application_key, mongo_client) {
         // If the IP address was successfully retrieved, store it in the variable
         Ok(sensors) => sensors,
         // If there was an error retrieving the IP address, print the error message and exit

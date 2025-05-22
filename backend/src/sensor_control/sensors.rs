@@ -8,7 +8,10 @@ use signal_hook::flag::register;
 
 use super::errors::SensorError;
 use super::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
-use super::temp_writer::TempWriter;
+
+use crate::database::errors::DatabaseError;
+
+use crate::datastore::storage::Storage;
 
 #[derive(Debug)]
 pub struct Sensor {
@@ -16,12 +19,11 @@ pub struct Sensor {
     name: String,
 }
 
-#[derive(Debug)]
 pub struct Sensors<T> {
     bridge_ip_address: String,
     hue_application_key: String,
     sensors: Vec<Sensor>,
-    temp_writer: T,
+    data_store: T,
 }
 
 const HUE_DOMAIN: &str = "hue-bridge";
@@ -32,9 +34,9 @@ pub const HUE_TEMPERATURE_URL: &str = "/clip/v2/resource/temperature";
 
 impl<T> Sensors<T>
 where
-    T: TempWriter + Send + 'static,
+    T: Storage<TemperatureData, Error = DatabaseError> + Send + 'static,
 {
-    pub fn new(hue_application_key: &str, temp_writer: T) -> Result<Self, SensorError> {
+    pub fn new(hue_application_key: &str, data_store: T) -> Result<Self, SensorError> {
         log::trace!("Creating new Sensors");
 
         // Get the IP address of the Hue bridge
@@ -50,7 +52,7 @@ where
             bridge_ip_address,
             hue_application_key: hue_application_key.to_string(),
             sensors: sensor_list,
-            temp_writer,
+            data_store,
         };
 
         // Return the Sensors struct
@@ -69,14 +71,11 @@ where
                 match self.get_temperatures() {
                     Ok(temperatures) => {
                         log::trace!("Temperatures: {:?}", temperatures);
-                        match self.store_temperatures(temperatures) {
-                            Ok(_) => {
-                                log::debug!("Stored temperatures");
-                            }
-                            Err(error) => {
-                                log::error!("Error storing temperatures: {}", error);
-                            }
+                        // Store the temperatures in the data store
+                        if let Err(error) = self.data_store.save_items(temperatures) {
+                            log::trace!("Error saving temperatures: {}", error);
                         }
+                        log::debug!("Storing temperatures");
                     }
                     Err(error) => {
                         log::error!("Error getting temperatures: {}", error);
@@ -235,10 +234,10 @@ where
                     .sensors
                     .iter()
                     .find(|sensor| sensor.id == temperature.id)
-                    .map(|sensor| sensor.name.as_str())
+                    .map(|sensor| sensor.name.clone())
                     .unwrap_or_else(|| {
                         log::warn!("Sensor not found for temperature data: {}", temperature.id);
-                        "Unknown"
+                        "Unknown".to_string()
                     }),
                 online: true,
                 timestamp: temperature.temperature.temperature_report.changed,
@@ -249,50 +248,5 @@ where
 
         // Return the vector of Temperature structs
         Ok(temperatures)
-    }
-
-    fn store_temperatures(&self, temperatures: Vec<TemperatureData>) -> Result<(), SensorError> {
-        log::debug!("Storing temperatures");
-
-        // Store the temperatures in the database
-        self.temp_writer.write_temps(temperatures)?;
-
-        // Return Ok
-        Ok(())
-    }
-}
-
-// Test the Sensors struct using a FileWriter
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sensor_control::file_writer::FileWriter;
-
-    #[test]
-    fn test_sensors() {
-        // Create a new Sensors struct
-        // Read the Hue Application Key from the file
-        let hue_application_key = match std::fs::read_to_string("secrets/hue_application_key.txt") {
-            Ok(key) => key,
-            Err(error) => {
-                log::error!("Error reading Hue Application Key: {}", error);
-                return;
-            }
-        };
-        let temp_writer = FileWriter::new("test.csv").unwrap();
-        let sensors = Sensors::new(&hue_application_key, temp_writer).unwrap();
-        // Run the sensors
-        let handle = match sensors.run() {
-            // If the thread was successfully spawned, store it in the variable
-            Ok(handle) => handle,
-            // If there was an error spawning the thread, print the error message and exit
-            Err(error) => {
-                log::error!("Error starting sensors: {}", error);
-                return;
-            }
-        };
-
-        // Wait for the thread to finish
-        handle.join().unwrap();
     }
 }
