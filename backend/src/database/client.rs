@@ -88,7 +88,7 @@ where
     T: Serialize + DeserializeOwned + Unpin + Send + Sync + 'static,
 {
     type Error = DatabaseError;
-    fn save_item(&self, data: T) -> Result<(), Self::Error> {
+    fn save_item(&self, data: &T) -> Result<(), Self::Error> {
         log::debug!("Saving item to MongoDB");
 
         // Get the collection from the MongoDB client
@@ -103,7 +103,7 @@ where
         Ok(())
     }
 
-    fn save_items(&self, data: Vec<T>) -> Result<(), Self::Error> {
+    fn save_items(&self, data: &[T]) -> Result<(), Self::Error> {
         log::debug!("Saving items to MongoDB");
 
         // Get the collection from the MongoDB client
