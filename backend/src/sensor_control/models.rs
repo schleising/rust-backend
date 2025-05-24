@@ -52,7 +52,7 @@ pub struct HueTemperatureList {
     pub data: Vec<HueTemperatureData>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TemperatureData {
     pub device_name: String,
     #[serde(with = "chrono_datetime_as_bson_datetime")]

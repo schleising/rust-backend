@@ -1,6 +1,6 @@
 use std::process::exit;
 
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 
 use mongodb::sync::Client;
 
@@ -85,7 +85,7 @@ where
 
 impl<T> Storage<T> for MongoClient<T>
 where
-    T: Serialize + Send + Sync + 'static,
+    T: Serialize + DeserializeOwned + Unpin + Send + Sync + 'static,
 {
     type Error = DatabaseError;
     fn save_item(&self, data: T) -> Result<(), Self::Error> {
@@ -124,5 +124,60 @@ where
             .run()?;
         log::debug!("Items saved to MongoDB");
         Ok(())
+    }
+
+    fn get_latest_items(
+        &self,
+        name_field: &str,
+        timestamp_field: &str,
+    ) -> Result<Vec<T>, Self::Error> {
+        log::debug!("Getting latest items from MongoDB");
+
+        // Get the collection from the MongoDB client
+        let collection = self
+            .client
+            .database(&self.database_name)
+            .collection::<T>(&self.collection_name);
+
+        // Use an aggregation pipeline to group by the name field and get the latest item for each name
+        let pipeline = vec![
+            mongodb::bson::doc! {
+                "$sort": {
+                    timestamp_field: -1
+                }
+            },
+            mongodb::bson::doc! {
+                "$group": {
+                    "_id": format!("${}", name_field),
+                    "latest_item": { "$first": "$$ROOT" }
+                }
+            },
+            mongodb::bson::doc! {
+                "$replaceRoot": { "newRoot": "$latest_item" }
+            },
+        ];
+
+        let cursor = collection.aggregate(pipeline).run()?;
+
+        // Collect the results into a vector
+        let items = cursor
+            .into_iter()
+            .filter_map(|result| match result {
+                Ok(item) => match bson::from_document(item) {
+                    Ok(data) => Some(data),
+                    Err(e) => {
+                        log::error!("Error deserializing item: {}", e);
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::error!("Error retrieving item: {}", e);
+                    None
+                }
+            })
+            .collect::<Vec<T>>();
+
+        log::debug!("Latest items retrieved from MongoDB");
+        Ok(items)
     }
 }
