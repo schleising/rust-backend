@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -5,6 +6,8 @@ use std::thread;
 use ureq::tls::TlsConfig;
 
 use signal_hook::flag::register;
+
+use chrono::{DateTime, Utc};
 
 use super::errors::SensorError;
 use super::models::{DeviceList, HueBridge, HueTemperatureList, TemperatureData};
@@ -72,8 +75,8 @@ where
                     Ok(temperatures) => {
                         log::trace!("Temperatures: {:?}", temperatures);
                         // Store the temperatures in the data store
-                        if let Err(error) = self.data_store.save_items(temperatures) {
-                            log::trace!("Error saving temperatures: {}", error);
+                        if let Err(error) = self.store_temperatures(temperatures) {
+                            log::error!("Error saving temperatures: {}", error);
                         }
                         log::debug!("Storing temperatures");
                     }
@@ -248,5 +251,45 @@ where
 
         // Return the vector of Temperature structs
         Ok(temperatures)
+    }
+
+    fn store_temperatures(&self, temperatures: Vec<TemperatureData>) -> Result<(), DatabaseError> {
+        log::debug!("Storing temperatures");
+
+        // Get the latest items from the data store
+        let latest_items = self
+            .data_store
+            .get_latest_items("device_name", "timestamp")?;
+
+        log::trace!("Latest items: {:?}", latest_items);
+
+        // Create a temporary map to hold the latest timestamps for each device
+        let temp_map = latest_items
+            .into_iter()
+            .map(|item| (item.device_name.clone(), item.timestamp))
+            .collect::<HashMap<String, DateTime<Utc>>>();
+
+        log::trace!("Temp map: {:?}", temp_map);
+
+        // Filter out temperatures that are already stored in the data store by comparing timestamps
+        let temperatures: Vec<TemperatureData> = temperatures
+            .into_iter()
+            .filter(|temp| {
+                // Check if the temperature is already stored
+                !temp_map.contains_key(&temp.device_name)
+                    || temp_map[&temp.device_name] < temp.timestamp
+            })
+            .collect();
+
+        // If there are new temperatures to store, store them
+        if !temperatures.is_empty() {
+            // Store the temperatures in the data store
+            self.data_store.save_items(&temperatures)?;
+            log::debug!("Stored {} new temperature record(s)", temperatures.len());
+        } else {
+            log::debug!("No new temperatures to store");
+        }
+
+        Ok(())
     }
 }

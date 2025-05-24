@@ -106,6 +106,12 @@ where
     fn save_items(&self, data: &[T]) -> Result<(), Self::Error> {
         log::debug!("Saving items to MongoDB");
 
+        // Check if the data is empty, if so, return early to avoid an empty insert operation error
+        if data.is_empty() {
+            log::debug!("No items to save to MongoDB");
+            return Ok(());
+        }
+
         // Get the collection from the MongoDB client
         let collection = self
             .client
@@ -122,7 +128,9 @@ where
             .insert_many(data)
             .with_options(insert_options)
             .run()?;
+
         log::debug!("Items saved to MongoDB");
+
         Ok(())
     }
 
