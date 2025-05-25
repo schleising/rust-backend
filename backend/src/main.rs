@@ -29,6 +29,12 @@ fn main() {
         })
         .init();
 
+    // Log the application name and version from Cargo.toml
+    log::info!(
+        "Starting Rust Backend - Version: {}",
+        env!("CARGO_PKG_VERSION")
+    );
+
     log::info!("Reading Hue Application Key from file");
 
     // Read the Hue Application Key from the file
