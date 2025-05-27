@@ -67,6 +67,7 @@ where
 {
     /// Creates a new MongoClient instance with the specified database and collection names.
     pub fn new(database_name: &str, collection_name: &str) -> Result<Self, DatabaseError> {
+        log::info!("Creating MongoClient for database: {}, collection: {}", database_name, collection_name);
         Ok(MongoClient {
             client: MONGO_CLIENT.clone(),
             database_name: database_name.to_string(),
