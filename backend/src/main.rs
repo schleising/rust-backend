@@ -63,7 +63,7 @@ fn main() {
     let index_model = IndexModel::builder()
         .keys(mongodb::bson::doc! {
             "device_name": 1,
-            "timestamp": 1,
+            "timestamp": -1,
         })
         .options(IndexOptions::builder().unique(true).build())
         .build();
