@@ -148,43 +148,45 @@ where
             .database(&self.database_name)
             .collection::<T>(&self.collection_name);
 
-        // Use an aggregation pipeline to group by the name field and get the latest item for each name
-        let pipeline = vec![
-            mongodb::bson::doc! {
-                "$sort": {
-                    timestamp_field: -1
-                }
-            },
-            mongodb::bson::doc! {
-                "$group": {
-                    "_id": format!("${}", name_field),
-                    "latest_item": { "$first": "$$ROOT" }
-                }
-            },
-            mongodb::bson::doc! {
-                "$replaceRoot": { "newRoot": "$latest_item" }
-            },
-        ];
-
-        let cursor = collection.aggregate(pipeline).run()?;
-
-        // Collect the results into a vector
-        let items = cursor
+        // Get all of the unique device names
+        let device_names: Vec<String> = collection
+            .distinct(name_field, mongodb::bson::doc! {})
+            .run()?
             .into_iter()
-            .filter_map(|result| match result {
-                Ok(item) => match bson::from_document(item) {
-                    Ok(data) => Some(data),
+            .filter_map(|item| item.as_str().map(String::from))
+            .collect();
+
+        log::debug!("Device names: {device_names:?}");
+
+        // Prepare a vector to hold the latest items
+        let mut items = Vec::new();
+
+        // Iterate over each device name and find the latest item for each
+        for device_name in device_names {
+            let filter = mongodb::bson::doc! { name_field: &device_name };
+            let options = mongodb::options::FindOptions::builder()
+                .sort(mongodb::bson::doc! { timestamp_field: -1 })
+                .limit(1)
+                .build();
+
+            // Find the latest item for the current device name
+            let result = collection.find(filter)
+                .with_options(options)
+                .run()?;
+
+            // If a result is found, push it to the items vector
+            if let Some(item) = result.into_iter().next() {
+                match item {
+                    Ok(item) => items.push(item),
                     Err(e) => {
-                        log::error!("Error deserializing item: {e}");
-                        None
+                        log::error!("Error retrieving item for device {device_name}: {e}");
+                        return Err(DatabaseError::from(e));
                     }
-                },
-                Err(e) => {
-                    log::error!("Error retrieving item: {e}");
-                    None
                 }
-            })
-            .collect::<Vec<T>>();
+            } else {
+                log::warn!("No items found for device: {device_name}");
+            }
+        }
 
         log::debug!("Latest items retrieved from MongoDB");
         Ok(items)
