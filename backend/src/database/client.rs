@@ -44,7 +44,7 @@ static MONGO_CLIENT: Lazy<Client> = Lazy::new(|| {
     {
         Ok(_) => log::info!("MongoDB connection established"),
         Err(e) => {
-            log::error!("Failed to ping MongoDB: {}", e);
+            log::error!("Failed to ping MongoDB: {e}");
             exit(1)
         }
     };
@@ -67,7 +67,7 @@ where
 {
     /// Creates a new MongoClient instance with the specified database and collection names.
     pub fn new(database_name: &str, collection_name: &str) -> Result<Self, DatabaseError> {
-        log::info!("Creating MongoClient for database: {}, collection: {}", database_name, collection_name);
+        log::info!("Creating MongoClient for database: {database_name}, collection: {collection_name}");
         Ok(MongoClient {
             client: MONGO_CLIENT.clone(),
             database_name: database_name.to_string(),
@@ -175,12 +175,12 @@ where
                 Ok(item) => match bson::from_document(item) {
                     Ok(data) => Some(data),
                     Err(e) => {
-                        log::error!("Error deserializing item: {}", e);
+                        log::error!("Error deserializing item: {e}");
                         None
                     }
                 },
                 Err(e) => {
-                    log::error!("Error retrieving item: {}", e);
+                    log::error!("Error retrieving item: {e}");
                     None
                 }
             })

@@ -44,11 +44,11 @@ where
 
         // Get the IP address of the Hue bridge
         let bridge_ip_address = Sensors::<T>::get_bridge()?;
-        log::debug!("Bridge IP: {}", bridge_ip_address);
+        log::debug!("Bridge IP: {bridge_ip_address}");
 
         // Get the sensors from the Hue bridge
         let sensor_list = Sensors::<T>::get_sensors(&bridge_ip_address, hue_application_key)?;
-        log::trace!("Sensors: {:?}", sensor_list);
+        log::trace!("Sensors: {sensor_list:?}");
 
         // Create a new Sensors struct
         let sensors = Sensors {
@@ -73,15 +73,15 @@ where
             while !term.load(Ordering::Relaxed) {
                 match self.get_temperatures() {
                     Ok(temperatures) => {
-                        log::trace!("Temperatures: {:?}", temperatures);
+                        log::trace!("Temperatures: {temperatures:?}");
                         // Store the temperatures in the data store
                         if let Err(error) = self.store_temperatures(temperatures) {
-                            log::error!("Error saving temperatures: {}", error);
+                            log::error!("Error saving temperatures: {error}");
                         }
                         log::debug!("Storing temperatures");
                     }
                     Err(error) => {
-                        log::error!("Error getting temperatures: {}", error);
+                        log::error!("Error getting temperatures: {error}");
                     }
                 }
 
@@ -94,7 +94,7 @@ where
         log::info!("Getting bridge");
 
         // Try getting the config from hue-bridge
-        let response = ureq::get(format!("http://{}/api/0/config", HUE_DOMAIN)).call()?;
+        let response = ureq::get(format!("http://{HUE_DOMAIN}/api/0/config")).call()?;
 
         if response.status() == 200 {
             log::info!("Got response from hue-bridge");
@@ -125,8 +125,8 @@ where
         hue_application_key: &str,
     ) -> Result<Vec<Sensor>, SensorError> {
         log::debug!("Getting sensors");
-        let hue_device_url = format!("https://{}{}", bridge_ip_address, HUE_DEVICE_URL);
-        log::debug!("Hue Device URL: {}", hue_device_url);
+        let hue_device_url = format!("https://{bridge_ip_address}{HUE_DEVICE_URL}");
+        log::debug!("Hue Device URL: {hue_device_url}");
 
         // Make a GET request to the Hue device URL
         let mut response = ureq::get(&hue_device_url)
@@ -197,7 +197,7 @@ where
         // Log the number of sensors
         log::info!("Number of sensors: {}", sensors.len());
 
-        log::trace!("Sensors: {:?}", sensors);
+        log::trace!("Sensors: {sensors:?}");
 
         // Return the vector of Sensor structs
         Ok(sensors)
@@ -209,7 +209,7 @@ where
         let hue_temperature_url =
             format!("https://{}{}", self.bridge_ip_address, HUE_TEMPERATURE_URL);
 
-        log::debug!("Hue Temperature URL: {}", hue_temperature_url);
+        log::debug!("Hue Temperature URL: {hue_temperature_url}");
 
         // Request the temperature data for all sensors
         let mut response = ureq::get(hue_temperature_url)
@@ -261,7 +261,7 @@ where
             .data_store
             .get_latest_items("device_name", "timestamp")?;
 
-        log::trace!("Latest items: {:?}", latest_items);
+        log::trace!("Latest items: {latest_items:?}");
 
         // Create a temporary map to hold the latest timestamps for each device
         let temp_map = latest_items
@@ -269,7 +269,7 @@ where
             .map(|item| (item.device_name.clone(), item.timestamp))
             .collect::<HashMap<String, DateTime<Utc>>>();
 
-        log::trace!("Temp map: {:?}", temp_map);
+        log::trace!("Temp map: {temp_map:?}");
 
         // Filter out temperatures that are already stored in the data store by comparing timestamps
         let temperatures: Vec<TemperatureData> = temperatures

@@ -41,7 +41,7 @@ fn main() {
     let hue_application_key = match std::fs::read_to_string("secrets/hue_application_key.txt") {
         Ok(key) => key,
         Err(error) => {
-            log::error!("Error reading Hue Application Key: {}", error);
+            log::error!("Error reading Hue Application Key: {error}");
             return;
         }
     };
@@ -54,7 +54,7 @@ fn main() {
         Ok(client) => client,
         // If there was an error creating the MongoClient, print the error message and exit
         Err(error) => {
-            log::error!("Error creating MongoClient: {}", error);
+            log::error!("Error creating MongoClient: {error}");
             return;
         }
     };
@@ -75,7 +75,7 @@ fn main() {
     {
         Ok(_) => log::info!("Index created successfully"),
         Err(e) => {
-            log::error!("Error creating index: {}", e);
+            log::error!("Error creating index: {e}");
             return;
         }
     }
@@ -90,7 +90,7 @@ fn main() {
         Ok(sensors) => sensors,
         // If there was an error retrieving the IP address, print the error message and exit
         Err(error) => {
-            log::error!("{}", error);
+            log::error!("{error}");
             return;
         }
     };
@@ -104,7 +104,7 @@ fn main() {
         Ok(handle) => handle,
         // If there was an error spawning the thread, print the error message and exit
         Err(error) => {
-            log::error!("Error starting sensors: {}", error);
+            log::error!("Error starting sensors: {error}");
             return;
         }
     };
