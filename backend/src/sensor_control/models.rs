@@ -1,8 +1,9 @@
 use std::str;
 
 use chrono::{DateTime, Utc};
-use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use bson::serde_helpers::datetime;
 
 #[derive(Deserialize)]
 pub struct HueBridge {
@@ -53,10 +54,11 @@ pub struct HueTemperatureList {
     pub data: Vec<HueTemperatureData>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TemperatureData {
     pub device_name: String,
-    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    #[serde_as(as = "datetime::FromChrono04DateTime")]
     pub timestamp: DateTime<Utc>,
     pub online: bool,
     pub temperature: f32,
