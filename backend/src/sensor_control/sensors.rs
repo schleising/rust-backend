@@ -29,7 +29,7 @@ pub struct Sensors<T> {
     data_store: T,
 }
 
-const HUE_DOMAIN: &str = "hue-bridge";
+const HUE_DOMAIN: &str = "hue-bridge.home.arpa";
 pub const HUE_DISCOVERY_URL: &str = "https://discovery.meethue.com/";
 pub const HUE_APPLICATION_KEY_HEADER: &str = "hue-application-key";
 pub const HUE_DEVICE_URL: &str = "/clip/v2/resource/device";
