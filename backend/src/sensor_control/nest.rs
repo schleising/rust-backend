@@ -19,7 +19,7 @@ use crate::datastore::storage::Storage;
 const NEST_CREDENTIALS_PATH: &str = "secrets/nest_credentials.json";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SDM_DEVICES_URL: &str = "https://smartdevicemanagement.googleapis.com/v1/enterprises";
-const POLL_INTERVAL_SECS: u64 = 60;
+const POLL_INTERVAL_SECS: u64 = 300;
 const TOKEN_EXPIRY_SKEW_SECS: i64 = 60;
 
 struct CachedAccessToken {
@@ -187,7 +187,7 @@ where
             .collect();
 
         for reading in &temperatures {
-            log::info!(
+            log::debug!(
                 "Nest {}: {:.2}°C, {:.0}% RH, online={}",
                 reading.device_name,
                 reading.temperature,
