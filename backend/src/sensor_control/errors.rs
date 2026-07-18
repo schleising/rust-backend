@@ -6,4 +6,6 @@ pub enum SensorError {
     Ureq(#[from] ureq::Error),
     #[error("File IO Error: {0}")]
     FileIO(#[from] std::io::Error),
+    #[error("JSON Error: {0}")]
+    Json(#[from] serde_json::Error),
 }

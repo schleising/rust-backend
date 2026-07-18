@@ -7,6 +7,7 @@ use database::client::MongoClient;
 
 mod sensor_control;
 use mongodb::{IndexModel, options::IndexOptions};
+use sensor_control::nest::NestThermostat;
 use sensor_control::sensors::Sensors;
 
 const DATABASE_NAME: &str = "web_database";
@@ -48,11 +49,9 @@ fn main() {
 
     log::info!("Creating Writer");
 
-    // Create a new MongoClient struct
-    let mongo_client = match MongoClient::new(DATABASE_NAME, COLLECTION_NAME) {
-        // If the MongoClient was successfully created, store it in the variable
+    // Create a new MongoClient struct for Hue
+    let hue_mongo_client = match MongoClient::new(DATABASE_NAME, COLLECTION_NAME) {
         Ok(client) => client,
-        // If there was an error creating the MongoClient, print the error message and exit
         Err(error) => {
             log::error!("Error creating MongoClient: {error}");
             return;
@@ -68,7 +67,7 @@ fn main() {
         .options(IndexOptions::builder().unique(true).build())
         .build();
 
-    match mongo_client
+    match hue_mongo_client
         .get_collection()
         .create_index(index_model)
         .run()
@@ -82,38 +81,60 @@ fn main() {
 
     log::info!("Created MongoClient");
 
-    log::info!("Creating Sensors");
+    // Separate client for Nest (shares the underlying Mongo connection pool)
+    let nest_mongo_client = match MongoClient::new(DATABASE_NAME, COLLECTION_NAME) {
+        Ok(client) => client,
+        Err(error) => {
+            log::error!("Error creating Nest MongoClient: {error}");
+            return;
+        }
+    };
 
-    // Create a new Sensors struct
-    let sensors = match Sensors::new(&hue_application_key, mongo_client) {
-        // If the IP address was successfully retrieved, store it in the variable
+    log::info!("Creating Hue Sensors");
+
+    let sensors = match Sensors::new(&hue_application_key, hue_mongo_client) {
         Ok(sensors) => sensors,
-        // If there was an error retrieving the IP address, print the error message and exit
         Err(error) => {
             log::error!("{error}");
             return;
         }
     };
 
-    log::info!("Created Sensors");
-    log::info!("Starting Sensors");
+    log::info!("Creating Nest Thermostat");
 
-    // Run the sensors
-    let handle = match sensors.run() {
-        // If the thread was successfully spawned, store it in the variable
-        Ok(handle) => handle,
-        // If there was an error spawning the thread, print the error message and exit
+    let nest = match NestThermostat::new(nest_mongo_client) {
+        Ok(nest) => nest,
         Err(error) => {
-            log::error!("Error starting sensors: {error}");
+            log::error!("Error creating Nest Thermostat: {error}");
+            return;
+        }
+    };
+
+    log::info!("Starting Hue Sensors");
+
+    let hue_handle = match sensors.run() {
+        Ok(handle) => handle,
+        Err(error) => {
+            log::error!("Error starting Hue sensors: {error}");
+            return;
+        }
+    };
+
+    log::info!("Starting Nest Thermostat");
+
+    let nest_handle = match nest.run() {
+        Ok(handle) => handle,
+        Err(error) => {
+            log::error!("Error starting Nest Thermostat: {error}");
             return;
         }
     };
 
     log::info!("Sensors started");
-    log::info!("Waiting for Sensors to finish");
+    log::info!("Waiting for sensor threads to finish");
 
-    // Wait for the thread to finish
-    handle.join().unwrap();
+    hue_handle.join().unwrap();
+    nest_handle.join().unwrap();
 
     log::info!("Sensors finished");
     log::info!("Exiting");
