@@ -264,6 +264,24 @@ curl -L -X POST 'https://www.googleapis.com/oauth2/v4/token?client_id=OAUTH_CLIE
 
 Returns a new `access_token` (typically without a new refresh token).
 
+### Refresh token expiry (Testing apps)
+
+Your original token response included `"refresh_token_expires_in": 604799` (~7 days).
+
+While the OAuth consent screen **Publishing status** is **Testing**, Google expires refresh tokens after **7 days**. Token refresh then fails with HTTP 400:
+
+```json
+{ "error": "invalid_grant", "error_description": "Token has been expired or revoked." }
+```
+
+**Fix options:**
+
+1. **Re-authorize** (works immediately; repeat every ~7 days while in Testing):
+   - Open the Partner Connections Manager URL from setup step 5
+   - Exchange the new `code` for tokens
+   - Update `refresh_token` in `secrets/nest_credentials.json`
+2. **Publish the OAuth app to Production** (Google Cloud → OAuth consent screen → Publish), then re-authorize once. New refresh tokens often omit `refresh_token_expires_in` and no longer expire on the 7-day clock. Full Google verification is not always required for personal single-user use, but you will still see the “unverified app” warning during consent.
+
 ---
 
 

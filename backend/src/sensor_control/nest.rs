@@ -99,12 +99,39 @@ where
         }
 
         log::info!("Refreshing Nest access token");
-        let mut response = ureq::post(TOKEN_URL).send_form([
+        let mut response = match ureq::post(TOKEN_URL).send_form([
             ("client_id", self.credentials.client_id.as_str()),
             ("client_secret", self.credentials.client_secret.as_str()),
             ("refresh_token", self.credentials.refresh_token.as_str()),
             ("grant_type", "refresh_token"),
-        ])?;
+        ]) {
+            Ok(response) => response,
+            Err(ureq::Error::StatusCode(status)) => {
+                // Best-effort body read isn't available on StatusCode errors from ureq;
+                // retry with status-as-error disabled so we can log Google's message.
+                let mut error_response = ureq::post(TOKEN_URL)
+                    .config()
+                    .http_status_as_error(false)
+                    .build()
+                    .send_form([
+                        ("client_id", self.credentials.client_id.as_str()),
+                        ("client_secret", self.credentials.client_secret.as_str()),
+                        ("refresh_token", self.credentials.refresh_token.as_str()),
+                        ("grant_type", "refresh_token"),
+                    ])?;
+                let body = error_response
+                    .body_mut()
+                    .read_to_string()
+                    .unwrap_or_else(|_| "<unreadable>".to_string());
+                log::error!(
+                    "Nest token refresh failed with HTTP {status}: {body}. \
+                     If this is invalid_grant, re-authorize and update secrets/nest_credentials.json \
+                     (Testing apps expire refresh tokens after ~7 days)."
+                );
+                return Err(SensorError::Ureq(ureq::Error::StatusCode(status)));
+            }
+            Err(error) => return Err(SensorError::Ureq(error)),
+        };
 
         let token_response: NestTokenResponse = response.body_mut().read_json()?;
         let expires_at =
