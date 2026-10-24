@@ -1,9 +1,9 @@
 release:
-	cd backend; cargo update; cargo build --target aarch64-unknown-linux-musl --release
+	docker compose -f docker-compose.yaml --profile build run --rm backend-builder
 	docker compose -f docker-compose.yaml up --build -d
 
 dev:
-	cd backend; cargo update; cargo build --target aarch64-unknown-linux-musl --release
+	docker compose -f docker-compose-dev.yaml --profile build run --rm backend-builder
 	docker compose -f docker-compose-dev.yaml up --build -d
 
 local:
