@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::database::errors::DatabaseError;
 use crate::datastore::storage::Storage;
 
-use super::models::TemperatureData;
+use super::models::{HeatingSample, TemperatureData};
 
 /// Persist readings that are newer than the latest stored timestamp per `device_name`.
 pub fn store_temperatures<T>(
@@ -30,7 +30,8 @@ where
     let temperatures: Vec<TemperatureData> = temperatures
         .into_iter()
         .filter(|temp| {
-            !temp_map.contains_key(&temp.device_name) || temp_map[&temp.device_name] < temp.timestamp
+            !temp_map.contains_key(&temp.device_name)
+                || temp_map[&temp.device_name] < temp.timestamp
         })
         .collect();
 
@@ -41,5 +42,28 @@ where
         log::debug!("No new temperatures to store");
     }
 
+    Ok(())
+}
+
+/// Insert one heating heartbeat per sample.
+///
+/// A sample is written on every successful poll, including when `hvac_status`
+/// did not change. The gap between heartbeats is a missed poll; a steady status
+/// must not look like a gap. This does not use the temperature "newer than latest"
+/// filter.
+pub fn store_heating_samples<T>(
+    data_store: &T,
+    samples: Vec<HeatingSample>,
+) -> Result<(), DatabaseError>
+where
+    T: Storage<HeatingSample, Error = DatabaseError>,
+{
+    if samples.is_empty() {
+        log::debug!("No heating samples to store");
+        return Ok(());
+    }
+
+    data_store.save_items(&samples)?;
+    log::debug!("Stored {} heating sample(s)", samples.len());
     Ok(())
 }

@@ -7,11 +7,38 @@ use database::client::MongoClient;
 
 mod sensor_control;
 use mongodb::{IndexModel, options::IndexOptions};
+use sensor_control::HeatingSample;
 use sensor_control::nest::NestThermostat;
 use sensor_control::sensors::Sensors;
+use serde::Serialize;
 
 const DATABASE_NAME: &str = "web_database";
 const COLLECTION_NAME: &str = "sensor_data";
+const HEATING_COLLECTION_NAME: &str = "heating_samples";
+
+fn ensure_unique_device_timestamp_index<T>(client: &MongoClient<T>, collection_label: &str) -> bool
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    let index_model = IndexModel::builder()
+        .keys(mongodb::bson::doc! {
+            "device_name": 1,
+            "timestamp": -1,
+        })
+        .options(IndexOptions::builder().unique(true).build())
+        .build();
+
+    match client.get_collection().create_index(index_model).run() {
+        Ok(_) => {
+            log::info!("{collection_label} index created successfully");
+            true
+        }
+        Err(error) => {
+            log::error!("Error creating {collection_label} index: {error}");
+            false
+        }
+    }
+}
 
 fn main() {
     // Initialize the logger
@@ -58,30 +85,13 @@ fn main() {
         }
     };
 
-    // Create a compound unique index on the device_name and timestamp fields
-    let index_model = IndexModel::builder()
-        .keys(mongodb::bson::doc! {
-            "device_name": 1,
-            "timestamp": -1,
-        })
-        .options(IndexOptions::builder().unique(true).build())
-        .build();
-
-    match hue_mongo_client
-        .get_collection()
-        .create_index(index_model)
-        .run()
-    {
-        Ok(_) => log::info!("Index created successfully"),
-        Err(e) => {
-            log::error!("Error creating index: {e}");
-            return;
-        }
+    if !ensure_unique_device_timestamp_index(&hue_mongo_client, "sensor_data") {
+        return;
     }
 
     log::info!("Created MongoClient");
 
-    // Separate client for Nest (shares the underlying Mongo connection pool)
+    // Separate client for Nest temperatures (shares the underlying Mongo connection pool)
     let nest_mongo_client = match MongoClient::new(DATABASE_NAME, COLLECTION_NAME) {
         Ok(client) => client,
         Err(error) => {
@@ -89,6 +99,20 @@ fn main() {
             return;
         }
     };
+
+    // Heating heartbeats live beside sensor_data, not on the temperature document.
+    let heating_mongo_client: MongoClient<HeatingSample> =
+        match MongoClient::new(DATABASE_NAME, HEATING_COLLECTION_NAME) {
+            Ok(client) => client,
+            Err(error) => {
+                log::error!("Error creating heating samples MongoClient: {error}");
+                return;
+            }
+        };
+
+    if !ensure_unique_device_timestamp_index(&heating_mongo_client, "heating_samples") {
+        return;
+    }
 
     log::info!("Creating Hue Sensors");
 
@@ -102,7 +126,7 @@ fn main() {
 
     log::info!("Creating Nest Thermostat");
 
-    let nest = match NestThermostat::new(nest_mongo_client) {
+    let nest = match NestThermostat::new(nest_mongo_client, heating_mongo_client) {
         Ok(nest) => nest,
         Err(error) => {
             log::error!("Error creating Nest Thermostat: {error}");
