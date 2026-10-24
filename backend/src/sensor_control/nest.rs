@@ -9,7 +9,8 @@ use signal_hook::flag::register;
 
 use super::errors::SensorError;
 use super::models::{
-    NestCredentials, NestDeviceList, NestTokenResponse, TemperatureData, THERMOSTAT_TYPE,
+    HeatingSample, NestCredentials, NestDeviceList, NestTokenResponse, THERMOSTAT_TYPE,
+    TemperatureData,
 };
 use super::store;
 
@@ -27,17 +28,19 @@ struct CachedAccessToken {
     expires_at: DateTime<Utc>,
 }
 
-pub struct NestThermostat<T> {
+pub struct NestThermostat<T, H> {
     credentials: NestCredentials,
     access_token: Mutex<Option<CachedAccessToken>>,
     data_store: T,
+    heating_store: H,
 }
 
-impl<T> NestThermostat<T>
+impl<T, H> NestThermostat<T, H>
 where
     T: Storage<TemperatureData, Error = DatabaseError> + Send + 'static,
+    H: Storage<HeatingSample, Error = DatabaseError> + Send + 'static,
 {
-    pub fn new(data_store: T) -> Result<Self, SensorError> {
+    pub fn new(data_store: T, heating_store: H) -> Result<Self, SensorError> {
         log::trace!("Creating NestThermostat");
 
         let credentials_json = std::fs::read_to_string(NEST_CREDENTIALS_PATH)?;
@@ -47,6 +50,7 @@ where
             credentials,
             access_token: Mutex::new(None),
             data_store,
+            heating_store,
         })
     }
 
@@ -68,9 +72,12 @@ where
     }
 
     fn poll_once(&self) -> Result<(), SensorError> {
-        let readings = self.get_temperatures()?;
+        let (readings, heating_samples) = self.read_thermostat()?;
         if let Err(error) = store::store_temperatures(&self.data_store, readings) {
             log::error!("Error saving Nest temperatures: {error}");
+        }
+        if let Err(error) = store::store_heating_samples(&self.heating_store, heating_samples) {
+            log::error!("Error saving Nest heating samples: {error}");
         }
         Ok(())
     }
@@ -163,7 +170,7 @@ where
         Ok(response.body_mut().read_json()?)
     }
 
-    fn get_temperatures(&self) -> Result<Vec<TemperatureData>, SensorError> {
+    fn read_thermostat(&self) -> Result<(Vec<TemperatureData>, Vec<HeatingSample>), SensorError> {
         log::debug!("Getting Nest thermostat readings");
 
         let access_token = self.get_access_token()?;
@@ -179,39 +186,49 @@ where
         };
 
         let now = Utc::now();
+        let mut temperatures = Vec::new();
+        let mut heating_samples = Vec::new();
 
-        let temperatures: Vec<TemperatureData> = body
+        for device in body
             .devices
             .iter()
             .filter(|device| device.device_type == THERMOSTAT_TYPE)
-            .filter_map(|device| {
-                let temperature = device
-                    .traits
-                    .temperature
-                    .as_ref()
-                    .map(|t| t.ambient_temperature_celsius)?;
-                let humidity = device
-                    .traits
-                    .humidity
-                    .as_ref()
-                    .map(|h| h.ambient_humidity_percent)
-                    .unwrap_or(0.0);
-                let online = device
-                    .traits
-                    .connectivity
-                    .as_ref()
-                    .map(|c| c.status.eq_ignore_ascii_case("ONLINE"))
-                    .unwrap_or(false);
+        {
+            // HVAC is independent of the temperature row. Skip the sample when the
+            // trait is absent; do not invent OFF. TemperatureData stays unchanged.
+            if let Some(sample) = HeatingSample::from_thermostat(device, now) {
+                heating_samples.push(sample);
+            }
 
-                Some(TemperatureData {
-                    device_name: device.display_name(),
-                    timestamp: now,
-                    online,
-                    temperature,
-                    humidity,
-                })
-            })
-            .collect();
+            let Some(temperature) = device
+                .traits
+                .temperature
+                .as_ref()
+                .map(|t| t.ambient_temperature_celsius)
+            else {
+                continue;
+            };
+            let humidity = device
+                .traits
+                .humidity
+                .as_ref()
+                .map(|h| h.ambient_humidity_percent)
+                .unwrap_or(0.0);
+            let online = device
+                .traits
+                .connectivity
+                .as_ref()
+                .map(|c| c.status.eq_ignore_ascii_case("ONLINE"))
+                .unwrap_or(false);
+
+            temperatures.push(TemperatureData {
+                device_name: device.display_name(),
+                timestamp: now,
+                online,
+                temperature,
+                humidity,
+            });
+        }
 
         for reading in &temperatures {
             log::debug!(
@@ -223,6 +240,17 @@ where
             );
         }
 
-        Ok(temperatures)
+        for sample in &heating_samples {
+            log::debug!(
+                "Nest heating {}: {} mode={:?} heat={:?} cool={:?}",
+                sample.device_name,
+                sample.hvac_status,
+                sample.mode,
+                sample.heat_celsius,
+                sample.cool_celsius
+            );
+        }
+
+        Ok((temperatures, heating_samples))
     }
 }

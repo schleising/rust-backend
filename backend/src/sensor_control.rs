@@ -4,3 +4,5 @@ pub mod sensors;
 mod errors;
 mod models;
 mod store;
+
+pub use models::HeatingSample;
