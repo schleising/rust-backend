@@ -1,0 +1,16 @@
+---
+description: Rust changes must pass rustfmt and Clippy with no warnings
+globs: backend/**/*.rs
+alwaysApply: false
+---
+
+# Clippy and formatting
+
+Finish Rust changes only when both commands pass from `backend/` with no warnings:
+
+```
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
+```
+
+`clippy::unwrap_used` and `clippy::expect_used` are restriction lints, so `-D warnings` alone does not enforce them. Fix the finding in the code. An `#[allow(clippy::...)]` needs a comment on the line above naming the false positive. Do not use `#[allow(dead_code)]` or `#[allow(unused)]` to hide unfinished work.

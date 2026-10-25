@@ -1,0 +1,29 @@
+---
+description: Ban panicking unwrap and expect; return thiserror Results
+globs: backend/**/*.rs
+alwaysApply: false
+---
+
+# Error handling
+
+Do not call `unwrap()` or `expect()` on `Option` or `Result`. The same ban covers `unwrap_err()` and `expect_err()`. Recovering methods are allowed: `unwrap_or`, `unwrap_or_else`, `unwrap_or_default`.
+
+This includes tests. A test that needs a fallible value returns `Result` and uses `?`, or checks the outcome with `assert!` / `assert_eq!`.
+
+```rust
+// ❌ BAD
+let sample = HeatingSample::from_thermostat(&parsed, timestamp).expect("sample");
+hue_handle.join().unwrap();
+
+// ✅ GOOD
+let Some(sample) = HeatingSample::from_thermostat(&parsed, timestamp) else {
+    log::warn!("Skipping thermostat with no HVAC sample");
+    return Ok(());
+};
+```
+
+Fallible functions return `Result<T, SensorError>` or `Result<T, DatabaseError>`. Add variants with `thiserror` and `#[from]` instead of introducing another error crate. Propagate with `?`.
+
+Log failures with the `log` crate and the error value (`log::error!("Failed to save sample: {error}")`). Do not use `println!` or `eprintln!` for operational errors, and do not drop an error with `let _ =`.
+
+`panic!`, `todo!`, `unimplemented!`, and `unreachable!` do not replace `Result`. When editing a function that already uses a banned call, replace those calls in that function.

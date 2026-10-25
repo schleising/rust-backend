@@ -1,0 +1,19 @@
+---
+description: Rust style for ownership, modules, logging, and tests
+globs: backend/**/*.rs
+alwaysApply: false
+---
+
+# Rust style
+
+Match the existing crate. Edition is 2024: use implicit format captures (`{error}`) and `let`-`else`.
+
+- Take `&str`, `&[T]`, or another reference when the function does not need to own the value. Clone only when the value must outlive the borrow or move to another thread (`Arc::clone`).
+- Do not add `unsafe` unless there is no safe alternative. Keep the block small and comment the invariant that makes it sound.
+- Public types implement `Debug`. Domain errors stay as `thiserror` enums in `errors.rs`.
+- Keep database access in `database` and device polling in `sensor_control`. Do not grow `main` with new domain logic.
+- Represent a closed set with an enum, not a free string.
+- Prefer iterators over index loops when the index is unused.
+- Do not add a dependency for something `std` or an existing crate already does.
+- Log lifecycle at `info`, routine I/O at `debug` or `trace`, skipped data at `warn`, and failures at `error`.
+- Put unit tests in a `#[cfg(test)]` module in the same file as the code they cover. New behavior gets a test.
