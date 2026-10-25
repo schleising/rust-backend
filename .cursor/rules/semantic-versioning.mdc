@@ -1,0 +1,16 @@
+---
+description: Bump the application version in backend/Cargo.toml using semantic versioning
+alwaysApply: true
+---
+
+# Application version
+
+The application version is the `version` field in `backend/Cargo.toml`. Startup logs it via `env!("CARGO_PKG_VERSION")`. Dependency versions in that file are not the application version.
+
+When a change ships user-visible or behavioral work, bump that version in the same change using [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
+
+- **PATCH** — bug fix or internal change with no new behavior (`1.1.1` → `1.1.2`)
+- **MINOR** — backward-compatible feature or capability (`1.1.1` → `1.2.0`)
+- **MAJOR** — breaking change to stored data, config, or external behavior (`1.1.1` → `2.0.0`)
+
+Read the current version from `Cargo.toml` before editing it. Reset lower segments to `0` when a higher segment increases. Do not bump the version for docs-only, comment-only, or design-only changes.
