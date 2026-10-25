@@ -1,10 +1,7 @@
-use std::process::exit;
-
 use serde::{Serialize, de::DeserializeOwned};
 
 use mongodb::sync::Client;
-
-use once_cell::sync::Lazy;
+use once_cell::sync::OnceCell;
 
 use super::errors::DatabaseError;
 
@@ -14,8 +11,9 @@ use crate::datastore::storage::Storage;
 const MONGO_URL: &str = "mongodb://localhost:27017";
 
 // A singleton MongoDB client that is initialized once and reused across the application.
-static MONGO_CLIENT: Lazy<Client> = Lazy::new(|| {
-    // Get the MongoDB URL from the environment variable or use the default
+static MONGO_CLIENT: OnceCell<Client> = OnceCell::new();
+
+fn connect_mongo() -> Result<Client, DatabaseError> {
     log::info!("Initializing MongoDB client");
     let database_url = match std::env::var("MONGO_URL") {
         Ok(url) => url,
@@ -25,33 +23,28 @@ static MONGO_CLIENT: Lazy<Client> = Lazy::new(|| {
         }
     };
 
-    // Set up MongoDB client options with a timeout of 5 seconds
-    let mut client_options = mongodb::options::ClientOptions::parse(database_url)
-        .run()
-        .expect("Failed to parse MongoDB URI");
+    let mut client_options = mongodb::options::ClientOptions::parse(database_url).run()?;
     client_options.server_selection_timeout = Some(std::time::Duration::new(5, 0));
     client_options.connect_timeout = Some(std::time::Duration::new(5, 0));
 
-    // Create a new MongoDB client with the options
-    let client = mongodb::sync::Client::with_options(client_options)
-        .expect("Failed to create MongoDB client");
+    let client = mongodb::sync::Client::with_options(client_options)?;
 
-    // Ping the client to ensure it's connected
-    match client
+    if let Err(error) = client
         .database("admin")
         .run_command(mongodb::bson::doc! { "ping": 1 })
         .run()
     {
-        Ok(_) => log::info!("MongoDB connection established"),
-        Err(e) => {
-            log::error!("Failed to ping MongoDB: {e}");
-            exit(1)
-        }
-    };
+        log::error!("Failed to ping MongoDB: {error}");
+        return Err(error.into());
+    }
 
-    // Return the client
-    client
-});
+    log::info!("MongoDB connection established");
+    Ok(client)
+}
+
+fn shared_mongo_client() -> Result<Client, DatabaseError> {
+    MONGO_CLIENT.get_or_try_init(connect_mongo).cloned()
+}
 
 /// A MongoDB client that implements the Storage trait.
 pub struct MongoClient<T> {
@@ -67,9 +60,11 @@ where
 {
     /// Creates a new MongoClient instance with the specified database and collection names.
     pub fn new(database_name: &str, collection_name: &str) -> Result<Self, DatabaseError> {
-        log::info!("Creating MongoClient for database: {database_name}, collection: {collection_name}");
+        log::info!(
+            "Creating MongoClient for database: {database_name}, collection: {collection_name}"
+        );
         Ok(MongoClient {
-            client: MONGO_CLIENT.clone(),
+            client: shared_mongo_client()?,
             database_name: database_name.to_string(),
             collection_name: collection_name.to_string(),
             _marker: std::marker::PhantomData,
@@ -89,20 +84,6 @@ where
     T: Serialize + DeserializeOwned + Unpin + Send + Sync + 'static,
 {
     type Error = DatabaseError;
-    fn save_item(&self, data: &T) -> Result<(), Self::Error> {
-        log::debug!("Saving item to MongoDB");
-
-        // Get the collection from the MongoDB client
-        let collection = self
-            .client
-            .database(&self.database_name)
-            .collection::<T>(&self.collection_name);
-
-        // Insert the data into the collection
-        collection.insert_one(data).run()?;
-        log::debug!("Item saved to MongoDB");
-        Ok(())
-    }
 
     fn save_items(&self, data: &[T]) -> Result<(), Self::Error> {
         log::debug!("Saving items to MongoDB");
@@ -170,9 +151,7 @@ where
                 .build();
 
             // Find the latest item for the current device name
-            let result = collection.find(filter)
-                .with_options(options)
-                .run()?;
+            let result = collection.find(filter).with_options(options).run()?;
 
             // If a result is found, push it to the items vector
             if let Some(item) = result.into_iter().next() {

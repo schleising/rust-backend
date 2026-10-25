@@ -8,4 +8,6 @@ pub enum SensorError {
     FileIO(#[from] std::io::Error),
     #[error("JSON Error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Hue discovery returned no bridges")]
+    NoBridge,
 }

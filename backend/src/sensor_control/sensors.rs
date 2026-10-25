@@ -73,7 +73,8 @@ where
                     Ok(temperatures) => {
                         log::trace!("Temperatures: {temperatures:?}");
                         // Store the temperatures in the data store
-                        if let Err(error) = store::store_temperatures(&self.data_store, temperatures)
+                        if let Err(error) =
+                            store::store_temperatures(&self.data_store, temperatures)
                         {
                             log::error!("Error saving temperatures: {error}");
                         }
@@ -112,11 +113,12 @@ where
 
         log::trace!("Parsed body");
 
-        // Get the IP address of the first bridge in the list
-        let ip_address = &body[0].internalipaddress;
+        let Some(bridge) = body.first() else {
+            log::error!("Hue discovery returned no bridges");
+            return Err(SensorError::NoBridge);
+        };
 
-        // Return the IP address as a String
-        Ok(ip_address.to_string())
+        Ok(bridge.internalipaddress.clone())
     }
 
     fn get_sensors(
@@ -168,12 +170,12 @@ where
             })
             .collect();
 
-        // Find length of the name of the sensor with the longest name
-        let max_name_length = sensors
+        let name_column_width = sensors
             .iter()
             .map(|sensor| sensor.name.len())
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max("Name".len());
 
         // Log the sensors
         log::info!("Sensors:");
@@ -182,14 +184,14 @@ where
             "Name",
             "",
             "Sensor ID",
-            width = max_name_length - "Name".len()
+            width = name_column_width - "Name".len()
         );
         for sensor in &sensors {
             log::info!(
                 "{:width$} - {}",
                 sensor.name,
                 sensor.id,
-                width = max_name_length
+                width = name_column_width
             );
         }
 

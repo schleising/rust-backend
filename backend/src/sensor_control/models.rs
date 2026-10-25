@@ -87,8 +87,6 @@ pub struct NestDeviceList {
 
 #[derive(Debug, Deserialize)]
 pub struct NestDevice {
-    #[allow(dead_code)]
-    pub name: String,
     #[serde(rename = "type")]
     pub device_type: String,
     pub traits: NestTraits,
@@ -262,18 +260,26 @@ pub const THERMOSTAT_TYPE: &str = "sdm.devices.types.THERMOSTAT";
 mod tests {
     use super::*;
 
-    fn device(traits: serde_json::Value) -> NestDevice {
+    fn device(traits: serde_json::Value) -> Result<NestDevice, String> {
         let mut value = serde_json::json!({
             "name": "enterprises/project/devices/thermostat",
             "type": THERMOSTAT_TYPE,
             "parentRelations": [{ "displayName": "Living Room" }]
         });
         value["traits"] = traits;
-        serde_json::from_value(value).expect("device JSON should parse")
+        serde_json::from_value(value).map_err(|error| error.to_string())
+    }
+
+    fn require_sample(
+        device: &NestDevice,
+        timestamp: DateTime<Utc>,
+    ) -> Result<HeatingSample, String> {
+        HeatingSample::from_thermostat(device, timestamp)
+            .ok_or_else(|| "expected a heating sample".to_string())
     }
 
     #[test]
-    fn heating_sample_stores_mode_and_heat_setpoint_only() {
+    fn heating_sample_stores_mode_and_heat_setpoint_only() -> Result<(), String> {
         let parsed = device(serde_json::json!({
             "sdm.devices.traits.Info": { "customName": "Living Room Nest" },
             "sdm.devices.traits.ThermostatHvac": { "status": "HEATING" },
@@ -285,12 +291,12 @@ mod tests {
             "sdm.devices.traits.Temperature": { "ambientTemperatureCelsius": 19.4 },
             "sdm.devices.traits.Humidity": { "ambientHumidityPercent": 48.0 },
             "sdm.devices.traits.Connectivity": { "status": "ONLINE" }
-        }));
+        }))?;
         let timestamp = DateTime::parse_from_rfc3339("2026-10-24T17:00:00Z")
-            .unwrap()
+            .map_err(|error| error.to_string())?
             .with_timezone(&Utc);
 
-        let sample = HeatingSample::from_thermostat(&parsed, timestamp).expect("sample");
+        let sample = require_sample(&parsed, timestamp)?;
 
         assert_eq!(sample.device_name, "Living Room Nest");
         assert_eq!(sample.timestamp, timestamp);
@@ -299,31 +305,32 @@ mod tests {
         assert_eq!(sample.heat_celsius, Some(20.0));
         assert_eq!(sample.cool_celsius, None);
 
-        let stored = serde_json::to_value(&sample).expect("json");
+        let stored = serde_json::to_value(&sample).map_err(|error| error.to_string())?;
         assert_eq!(stored["hvac_status"], "HEATING");
         assert_eq!(stored["mode"], "HEAT");
         assert_eq!(stored["heat_celsius"], 20.0);
         assert!(stored.get("cool_celsius").is_none());
+        Ok(())
     }
 
     #[test]
-    fn cool_setpoint_is_not_copied_from_an_earlier_heat_sample() {
+    fn cool_setpoint_is_not_copied_from_an_earlier_heat_sample() -> Result<(), String> {
         let heat = device(serde_json::json!({
             "sdm.devices.traits.Info": { "customName": "Living Room Nest" },
             "sdm.devices.traits.ThermostatHvac": { "status": "OFF" },
             "sdm.devices.traits.ThermostatMode": { "mode": "HEAT" },
             "sdm.devices.traits.ThermostatTemperatureSetpoint": { "heatCelsius": 21.5 }
-        }));
+        }))?;
         let cool = device(serde_json::json!({
             "sdm.devices.traits.Info": { "customName": "Living Room Nest" },
             "sdm.devices.traits.ThermostatHvac": { "status": "COOLING" },
             "sdm.devices.traits.ThermostatMode": { "mode": "COOL" },
             "sdm.devices.traits.ThermostatTemperatureSetpoint": { "coolCelsius": 24.0 }
-        }));
+        }))?;
         let now = Utc::now();
 
-        let heat_sample = HeatingSample::from_thermostat(&heat, now).expect("heat");
-        let cool_sample = HeatingSample::from_thermostat(&cool, now).expect("cool");
+        let heat_sample = require_sample(&heat, now)?;
+        let cool_sample = require_sample(&cool, now)?;
 
         assert_eq!(heat_sample.hvac_status, "OFF");
         assert_eq!(heat_sample.heat_celsius, Some(21.5));
@@ -332,10 +339,11 @@ mod tests {
         assert_eq!(cool_sample.mode.as_deref(), Some("COOL"));
         assert_eq!(cool_sample.heat_celsius, None);
         assert_eq!(cool_sample.cool_celsius, Some(24.0));
+        Ok(())
     }
 
     #[test]
-    fn heatcool_keeps_both_setpoints() {
+    fn heatcool_keeps_both_setpoints() -> Result<(), String> {
         let parsed = device(serde_json::json!({
             "sdm.devices.traits.ThermostatHvac": { "status": "OFF" },
             "sdm.devices.traits.ThermostatMode": { "mode": "HEATCOOL" },
@@ -343,38 +351,41 @@ mod tests {
                 "heatCelsius": 18.0,
                 "coolCelsius": 24.5
             }
-        }));
+        }))?;
 
-        let sample = HeatingSample::from_thermostat(&parsed, Utc::now()).expect("sample");
+        let sample = require_sample(&parsed, Utc::now())?;
 
         assert_eq!(sample.device_name, "Nest (Living Room)");
         assert_eq!(sample.mode.as_deref(), Some("HEATCOOL"));
         assert_eq!(sample.heat_celsius, Some(18.0));
         assert_eq!(sample.cool_celsius, Some(24.5));
+        Ok(())
     }
 
     #[test]
-    fn missing_hvac_is_skipped_even_when_mode_is_heat() {
+    fn missing_hvac_is_skipped_even_when_mode_is_heat() -> Result<(), String> {
         let parsed = device(serde_json::json!({
             "sdm.devices.traits.Info": { "customName": "Living Room Nest" },
             "sdm.devices.traits.ThermostatMode": { "mode": "HEAT" },
             "sdm.devices.traits.ThermostatTemperatureSetpoint": { "heatCelsius": 20.0 },
             "sdm.devices.traits.Temperature": { "ambientTemperatureCelsius": 19.0 }
-        }));
+        }))?;
 
         assert!(HeatingSample::from_thermostat(&parsed, Utc::now()).is_none());
+        Ok(())
     }
 
     #[test]
-    fn blank_hvac_status_is_not_invented_as_off() {
+    fn blank_hvac_status_is_not_invented_as_off() -> Result<(), String> {
         let missing = device(serde_json::json!({
             "sdm.devices.traits.ThermostatHvac": {}
-        }));
+        }))?;
         let blank = device(serde_json::json!({
             "sdm.devices.traits.ThermostatHvac": { "status": "  " }
-        }));
+        }))?;
 
         assert!(HeatingSample::from_thermostat(&missing, Utc::now()).is_none());
         assert!(HeatingSample::from_thermostat(&blank, Utc::now()).is_none());
+        Ok(())
     }
 }

@@ -82,20 +82,21 @@ where
         Ok(())
     }
 
+    fn lock_access_token(&self) -> std::sync::MutexGuard<'_, Option<CachedAccessToken>> {
+        self.access_token.lock().unwrap_or_else(|poisoned| {
+            log::error!("Nest access token mutex poisoned; continuing with the stored token");
+            poisoned.into_inner()
+        })
+    }
+
     fn invalidate_access_token(&self) {
-        let mut guard = self
-            .access_token
-            .lock()
-            .expect("Nest access token mutex poisoned");
+        let mut guard = self.lock_access_token();
         *guard = None;
     }
 
     fn get_access_token(&self) -> Result<String, SensorError> {
         {
-            let guard = self
-                .access_token
-                .lock()
-                .expect("Nest access token mutex poisoned");
+            let guard = self.lock_access_token();
             if let Some(cached) = guard.as_ref() {
                 let refresh_after =
                     cached.expires_at - chrono::Duration::seconds(TOKEN_EXPIRY_SKEW_SECS);
@@ -144,10 +145,7 @@ where
         let expires_at =
             Utc::now() + chrono::Duration::seconds(i64::from(token_response.expires_in));
 
-        let mut guard = self
-            .access_token
-            .lock()
-            .expect("Nest access token mutex poisoned");
+        let mut guard = self.lock_access_token();
         *guard = Some(CachedAccessToken {
             token: token_response.access_token.clone(),
             expires_at,
