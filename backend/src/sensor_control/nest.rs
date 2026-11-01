@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,10 +8,11 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use signal_hook::flag::register;
 
+use super::changes::{nest_temperature_due, select_heating_changes};
 use super::errors::SensorError;
 use super::models::{
-    HeatingSample, NestCredentials, NestDeviceList, NestTokenResponse, THERMOSTAT_TYPE,
-    TemperatureData,
+    HeatingReading, HeatingSample, NestCredentials, NestDeviceList, NestTokenResponse,
+    THERMOSTAT_TYPE, TemperatureData,
 };
 use super::store;
 
@@ -20,7 +22,7 @@ use crate::datastore::storage::Storage;
 const NEST_CREDENTIALS_PATH: &str = "secrets/nest_credentials.json";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SDM_DEVICES_URL: &str = "https://smartdevicemanagement.googleapis.com/v1/enterprises";
-const POLL_INTERVAL_SECS: u64 = 300;
+const POLL_INTERVAL_SECS: u64 = 60;
 const TOKEN_EXPIRY_SKEW_SECS: i64 = 60;
 
 struct CachedAccessToken {
@@ -28,19 +30,24 @@ struct CachedAccessToken {
     expires_at: DateTime<Utc>,
 }
 
-pub struct NestThermostat<T, H> {
+pub struct NestThermostat<T, H, C> {
     credentials: NestCredentials,
     access_token: Mutex<Option<CachedAccessToken>>,
     data_store: T,
     heating_store: H,
+    change_store: C,
+    remembered: HashMap<String, HeatingReading>,
+    changes_enabled: bool,
+    last_nest_temperature_at: Option<DateTime<Utc>>,
 }
 
-impl<T, H> NestThermostat<T, H>
+impl<T, H, C> NestThermostat<T, H, C>
 where
     T: Storage<TemperatureData, Error = DatabaseError> + Send + 'static,
     H: Storage<HeatingSample, Error = DatabaseError> + Send + 'static,
+    C: Storage<HeatingSample, Error = DatabaseError> + Send + 'static,
 {
-    pub fn new(data_store: T, heating_store: H) -> Result<Self, SensorError> {
+    pub fn new(data_store: T, heating_store: H, change_store: C) -> Result<Self, SensorError> {
         log::trace!("Creating NestThermostat");
 
         let credentials_json = std::fs::read_to_string(NEST_CREDENTIALS_PATH)?;
@@ -51,10 +58,21 @@ where
             access_token: Mutex::new(None),
             data_store,
             heating_store,
+            change_store,
+            remembered: HashMap::new(),
+            changes_enabled: true,
+            last_nest_temperature_at: None,
         })
     }
 
-    pub fn run(self) -> Result<thread::JoinHandle<()>, SensorError> {
+    pub fn run(mut self) -> Result<thread::JoinHandle<()>, SensorError> {
+        if let Err(error) = self.seed_changes() {
+            log::error!(
+                "Error reading heating_changes; change log writes are disabled until restart: {error}"
+            );
+            self.changes_enabled = false;
+        }
+
         let term = Arc::new(AtomicBool::new(false));
         register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
         register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
@@ -71,14 +89,53 @@ where
         }))
     }
 
-    fn poll_once(&self) -> Result<(), SensorError> {
-        let (readings, heating_samples) = self.read_thermostat()?;
-        if let Err(error) = store::store_temperatures(&self.data_store, readings) {
-            log::error!("Error saving Nest temperatures: {error}");
+    fn seed_changes(&mut self) -> Result<(), DatabaseError> {
+        let latest = self
+            .change_store
+            .get_latest_items("device_name", "timestamp")?;
+        for sample in latest {
+            self.remembered
+                .insert(sample.device_name.clone(), sample.reading());
         }
-        if let Err(error) = store::store_heating_samples(&self.heating_store, heating_samples) {
+        Ok(())
+    }
+
+    fn poll_once(&mut self) -> Result<(), SensorError> {
+        let (readings, heating_samples) = self.read_thermostat()?;
+        let now = Utc::now();
+
+        if let Err(error) =
+            store::store_heating_samples(&self.heating_store, heating_samples.clone())
+        {
             log::error!("Error saving Nest heating samples: {error}");
         }
+
+        if self.changes_enabled {
+            let changed = select_heating_changes(&self.remembered, &heating_samples);
+            if !changed.is_empty() {
+                if let Err(error) =
+                    store::store_heating_samples(&self.change_store, changed.clone())
+                {
+                    log::error!("Error saving Nest heating changes: {error}");
+                } else {
+                    for sample in changed {
+                        self.remembered
+                            .insert(sample.device_name.clone(), sample.reading());
+                    }
+                }
+            }
+        }
+
+        if nest_temperature_due(self.last_nest_temperature_at, now) {
+            if let Err(error) = store::store_temperatures(&self.data_store, readings) {
+                log::error!("Error saving Nest temperatures: {error}");
+            } else {
+                self.last_nest_temperature_at = Some(now);
+            }
+        } else {
+            log::debug!("Skipping Nest temperature write until 300 seconds have elapsed");
+        }
+
         Ok(())
     }
 

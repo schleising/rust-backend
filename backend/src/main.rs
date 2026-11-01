@@ -1,21 +1,17 @@
 use std::io::Write;
 
-mod datastore;
-
-mod database;
-use database::client::MongoClient;
-use database::errors::DatabaseError;
-
-mod sensor_control;
 use mongodb::{IndexModel, options::IndexOptions};
-use sensor_control::HeatingSample;
-use sensor_control::nest::NestThermostat;
-use sensor_control::sensors::Sensors;
+use rust_backend::database::client::MongoClient;
+use rust_backend::database::errors::DatabaseError;
+use rust_backend::sensor_control::HeatingSample;
+use rust_backend::sensor_control::nest::NestThermostat;
+use rust_backend::sensor_control::sensors::Sensors;
 use serde::Serialize;
 
 const DATABASE_NAME: &str = "web_database";
 const COLLECTION_NAME: &str = "sensor_data";
 const HEATING_COLLECTION_NAME: &str = "heating_samples";
+const HEATING_CHANGES_COLLECTION_NAME: &str = "heating_changes";
 
 fn ensure_unique_device_timestamp_index<T>(
     client: &MongoClient<T>,
@@ -115,6 +111,22 @@ fn main() {
         return;
     }
 
+    let heating_changes_client: MongoClient<HeatingSample> =
+        match MongoClient::new(DATABASE_NAME, HEATING_CHANGES_COLLECTION_NAME) {
+            Ok(client) => client,
+            Err(error) => {
+                log::error!("Error creating heating changes MongoClient: {error}");
+                return;
+            }
+        };
+
+    if let Err(error) =
+        ensure_unique_device_timestamp_index(&heating_changes_client, "heating_changes")
+    {
+        log::error!("Error creating heating_changes index: {error}");
+        return;
+    }
+
     log::info!("Creating Hue Sensors");
 
     let sensors = match Sensors::new(&hue_application_key, hue_mongo_client) {
@@ -127,7 +139,11 @@ fn main() {
 
     log::info!("Creating Nest Thermostat");
 
-    let nest = match NestThermostat::new(nest_mongo_client, heating_mongo_client) {
+    let nest = match NestThermostat::new(
+        nest_mongo_client,
+        heating_mongo_client,
+        heating_changes_client,
+    ) {
         Ok(nest) => nest,
         Err(error) => {
             log::error!("Error creating Nest Thermostat: {error}");

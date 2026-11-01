@@ -190,12 +190,22 @@ pub struct NestTemperatureSetpointTrait {
     pub cool_celsius: Option<f32>,
 }
 
-/// One Nest poll heartbeat in `web_database.heating_samples`.
+/// The four thermostat fields that decide whether `heating_changes` gets a row.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeatingReading {
+    pub hvac_status: String,
+    pub mode: Option<String>,
+    pub heat_celsius: Option<f32>,
+    pub cool_celsius: Option<f32>,
+}
+
+/// One thermostat observation.
 ///
-/// Written even when status is unchanged. `mode` and the setpoint fields are
-/// omitted when that poll's GET did not include them.
+/// `heating_samples` stores one of these on every successful poll. `heating_changes`
+/// stores one only when [`HeatingReading`] differs from the previous row.
+/// `mode` and the setpoint fields are omitted when that poll's GET did not include them.
 #[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HeatingSample {
     pub device_name: String,
     #[serde_as(as = "datetime::FromChrono04DateTime")]
@@ -251,6 +261,15 @@ impl HeatingSample {
             heat_celsius,
             cool_celsius,
         })
+    }
+
+    pub fn reading(&self) -> HeatingReading {
+        HeatingReading {
+            hvac_status: self.hvac_status.clone(),
+            mode: self.mode.clone(),
+            heat_celsius: self.heat_celsius,
+            cool_celsius: self.cool_celsius,
+        }
     }
 }
 

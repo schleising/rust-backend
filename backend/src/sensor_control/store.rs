@@ -45,12 +45,11 @@ where
     Ok(())
 }
 
-/// Insert one heating heartbeat per sample.
+/// Insert each heating sample it is given.
 ///
-/// A sample is written on every successful poll, including when `hvac_status`
-/// did not change. The gap between heartbeats is a missed poll; a steady status
-/// must not look like a gap. This does not use the temperature "newer than latest"
-/// filter.
+/// The heartbeat caller passes every sample from the poll. The change-log caller
+/// passes only the samples whose reading differs from memory. This does not use
+/// the temperature "newer than latest" filter.
 pub fn store_heating_samples<T>(
     data_store: &T,
     samples: Vec<HeatingSample>,
