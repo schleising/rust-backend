@@ -151,85 +151,18 @@ Hold `last_nest_temperature_at` in the poll thread. It starts unset and is not r
 
 Hue `sensors.rs` stays at one second. Do not copy heating fields onto `sensor_data`.
 
-## Migration script
+## Migration
 
-Historic `heating_samples` rows are heartbeats about every 300 seconds, with the same fields repeated. Copy a collapsed change log into `heating_changes`. Leave `heating_samples` where it is, including its name and its documents. Collapse each stretch where `hvac_status`, `mode`, `heat_celsius`, and `cool_celsius` all stay the same. Run that once, with a separate binary, while the poller is stopped. `main` does not call it. The Makefile targets and the Compose files do not call it.
-
-Cargo picks up `backend/src/bin/heating_migrate.rs` as the bin `heating_migrate` beside the existing `src/main.rs` binary. Run it by hand:
-
-```text
-cargo run --bin heating_migrate -- --dry-run
-cargo run --bin heating_migrate
-```
-
-The connection string is a static in `heating_migrate.rs`, not `MONGO_URL`. That variable is set only inside the Docker container. This binary is run on the host, so the static is:
-
-```rust
-const MONGO_URL: &str = "mongodb://macmini2.home.arpa:27017";
-```
-
-The database name is `web_database`, the same database `MongoClient` uses. The script does not read the environment for the URL.
-
-Refuse to run, without writing, if `heating_changes` already exists. That collection is the finished change log, so a second run cannot insert another copy beside it. The script never renames or deletes `heating_samples`.
-
-`--dry-run` reads `heating_samples` and prints, per `device_name`: input rows, output rows, and the first and last kept row. It does not create a collection.
-
-The applying run:
-
-1. Read `heating_samples` ordered by `device_name`, then `timestamp` ascending.
-2. Collapse each device independently.
-3. Create `heating_changes` and the unique index `{ device_name: 1, timestamp: -1 }`.
-4. Insert the kept rows into `heating_changes`.
-
-`heating_changes` stays under that name. If the process stops during the insert, drop `heating_changes` by hand and run the script again. `heating_samples` is unchanged either way.
-
-Skip a source row with a missing or blank `hvac_status`, and log its `_id`. Compare status and mode trimmed, without changing case. Nest sends those strings in uppercase.
-
-Keep the first row of each device. Keep the earliest timestamp of a stretch whose `hvac_status`, `mode`, `heat_celsius`, and `cool_celsius` all match the row already kept, and drop the later copies. A missing `mode` or threshold matches only another missing value. Copy all four fields onto the kept row.
-
-Do not invent a row for a hole in the heartbeats. A crash while the last heartbeat was still `HEATING` at the same thresholds stays on that reading until a later row differs. `heating_samples` still has every heartbeat.
-
-```mermaid
-flowchart LR
-  rows["Heartbeats in time order"]
-  cmp{"Same status, mode, and both thresholds as the kept row?"}
-  drop["Drop this heartbeat"]
-  keep["Keep this timestamp and its fields"]
-  rows --> cmp
-  cmp -->|yes| drop
-  cmp -->|no| keep
-```
-
-Worked collapse for one device:
-
-| Heartbeat | Kept row |
-| --- | --- |
-| 12:00 `HEATING`, `HEAT`, heat 20.0 | 12:00 `HEATING`, `HEAT`, heat 20.0 |
-| 12:05 `HEATING`, `HEAT`, heat 20.0 | |
-| 12:10 `HEATING`, `HEAT`, heat 21.0 | 12:10 `HEATING`, `HEAT`, heat 21.0 |
-| 12:15 `HEATING`, `HEAT`, heat 21.0 | |
-| 12:20 `OFF`, `HEAT`, heat 21.0 | 12:20 `OFF`, `HEAT`, heat 21.0 |
-| 14:30 `COOLING`, `HEATCOOL`, heat 18.0, cool 24.0 | 14:30 `COOLING`, `HEATCOOL`, heat 18.0, cool 24.0 |
-| 14:35 `COOLING`, `HEATCOOL`, heat 18.0, cool 24.0 | |
-| 14:40 `COOLING`, `HEATCOOL`, heat 18.0, cool 23.0 | 14:40 `COOLING`, `HEATCOOL`, heat 18.0, cool 23.0 |
-| 14:45 `OFF`, `HEATCOOL`, heat 18.0, cool 23.0 | 14:45 `OFF`, `HEATCOOL`, heat 18.0, cool 23.0 |
-
-The 14:40 row is kept because `cool_celsius` changed while status and mode did not. A hole does not add a row. `12:00 HEATING / HEAT / heat 20.0`, `12:05` with the same values, then `13:30` with the same values, then `13:35 OFF / HEAT / heat 20.0` becomes the 12:00 row and the 13:35 row.
+The one-shot migration has been run. It copied a collapsed change log from `heating_samples` into `heating_changes` and left `heating_samples` in place. The `heating_migrate` binary has been removed.
 
 ## Rollout
 
-Run the steps in this order. After step 3 the poller writes heartbeats to `heating_samples` and changes to `heating_changes`. The current Monitor page keeps reading `heating_samples`. Switch it to `heating_changes` when the website change in [heating-webapp-interface.md](heating-webapp-interface.md) is deployed. That reader treats the space between change rows as “these values are still in force.”
-
-1. Stop the poller.
-2. `cargo run --bin heating_migrate -- --dry-run`, then the same command without `--dry-run`.
-3. Start the poller built from this design, version `2.0.0`.
-4. Deploy the website change when ready. `heating_samples` is still being written, so this step can wait.
+The poller writes heartbeats to `heating_samples` and changes to `heating_changes`. The current Monitor page keeps reading `heating_samples`. Switch it to `heating_changes` when the website change in [heating-webapp-interface.md](heating-webapp-interface.md) is deployed. That reader treats the space between change rows as “these values are still in force.” `heating_samples` is still being written, so that switch can wait.
 
 ## Out of scope
 
 - Thermostat commands. Recording `mode` and the two thresholds is not control.
 - Clock-aligned polls, truncated timestamps, and a synthetic row when a poll is missed.
-- Running the migration from `main`, from Docker Compose, or from a Makefile target.
 - Hue polling, the `sensor_data` document, and the Online / Offline pill.
 - The chart wash. Colors and “draw this period only” stay in the earlier note.
 
@@ -239,4 +172,4 @@ Run the steps in this order. After step 3 the poller writes heartbeats to `heati
 2. **Write Nest temperature rows about every 300 seconds.** Hue stays at one second.
 3. **Keep `hvac_status`, `mode`, `heat_celsius`, and `cool_celsius`.** Write one row when any of them changes, and copy all four onto that row. `COOLING` stays `COOLING`.
 4. **Seed the poller’s memory from the latest `heating_changes` row at startup.** After that, read `heating_changes` only to insert a change. Keep writing a heartbeat to `heating_samples` on every successful GET.
-5. **Migrate with `heating_migrate`, once, while the poller is stopped.** Collapse `heating_samples` into `heating_changes`. Leave `heating_samples` in place.
+5. **`heating_changes` was filled once from `heating_samples`.** `heating_samples` stays in place. The migration binary has been removed.
