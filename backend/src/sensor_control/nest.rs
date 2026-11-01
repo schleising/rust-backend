@@ -30,24 +30,22 @@ struct CachedAccessToken {
     expires_at: DateTime<Utc>,
 }
 
-pub struct NestThermostat<T, H, C> {
+pub struct NestThermostat<T, C> {
     credentials: NestCredentials,
     access_token: Mutex<Option<CachedAccessToken>>,
     data_store: T,
-    heating_store: H,
     change_store: C,
     remembered: HashMap<String, HeatingReading>,
     changes_enabled: bool,
     last_nest_temperature_at: Option<DateTime<Utc>>,
 }
 
-impl<T, H, C> NestThermostat<T, H, C>
+impl<T, C> NestThermostat<T, C>
 where
     T: Storage<TemperatureData, Error = DatabaseError> + Send + 'static,
-    H: Storage<HeatingSample, Error = DatabaseError> + Send + 'static,
     C: Storage<HeatingSample, Error = DatabaseError> + Send + 'static,
 {
-    pub fn new(data_store: T, heating_store: H, change_store: C) -> Result<Self, SensorError> {
+    pub fn new(data_store: T, change_store: C) -> Result<Self, SensorError> {
         log::trace!("Creating NestThermostat");
 
         let credentials_json = std::fs::read_to_string(NEST_CREDENTIALS_PATH)?;
@@ -57,7 +55,6 @@ where
             credentials,
             access_token: Mutex::new(None),
             data_store,
-            heating_store,
             change_store,
             remembered: HashMap::new(),
             changes_enabled: true,
@@ -103,12 +100,6 @@ where
     fn poll_once(&mut self) -> Result<(), SensorError> {
         let (readings, heating_samples) = self.read_thermostat()?;
         let now = Utc::now();
-
-        if let Err(error) =
-            store::store_heating_samples(&self.heating_store, heating_samples.clone())
-        {
-            log::error!("Error saving Nest heating samples: {error}");
-        }
 
         if self.changes_enabled {
             let changed = select_heating_changes(&self.remembered, &heating_samples);

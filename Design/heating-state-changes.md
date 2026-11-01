@@ -2,7 +2,7 @@
 
 ## Goal
 
-Check the Nest thermostat once a minute. Leave `web_database.heating_samples` as the heartbeat collection the current Monitor page already reads. Write a `web_database.heating_changes` row when any of these changes:
+Check the Nest thermostat once a minute. Write a `web_database.heating_changes` row when any of these changes:
 
 | Field | Meaning |
 | --- | --- |
@@ -24,13 +24,13 @@ A steady thermostat writes nothing. A change of any one field writes one row car
 
 The 12:10 row exists because the heat threshold moved. Heating was already running, and it keeps running until 12:20. The 14:40 row exists because the cool threshold moved. Cooling was already running, and it keeps running until 14:45. A `HEAT` row omits `cool_celsius` because Nest did not send it.
 
-Keep Nest temperature rows on their current five-minute cadence, and leave Hue at one second. On every successful GET, keep inserting today’s heartbeat into `heating_samples`, so the current page keeps drawing until its reader is switched. Remember the last values in the poller. Read `heating_changes` at startup to seed that memory, and write that collection only when any of the four values differs.
+Keep Nest temperature rows on their current five-minute cadence, and leave Hue at one second. Do not write `heating_samples`. Remember the last values in the poller. Read `heating_changes` at startup to seed that memory, and write that collection only when any of the four values differs.
 
-`heating_changes` keeps that name. Nothing renames it onto `heating_samples`, and nothing renames `heating_samples` away. The website contract for the new collection is [heating-webapp-interface.md](heating-webapp-interface.md). That file is the copy to take into the website3 design folder.
+`heating_changes` keeps that name. Nothing renames it onto `heating_samples`, and nothing renames `heating_samples` away. Existing `heating_samples` documents stay where they are. The website contract for the new collection is [heating-webapp-interface.md](heating-webapp-interface.md). That file is the copy to take into the website3 design folder.
 
-The code change that follows this note changes which rows exist. Bump `backend/Cargo.toml` from `1.2.1` to `2.0.0` in that change. This note does not bump it.
+The code change that follows this note changes which rows exist. Bump `backend/Cargo.toml` from `1.2.1` to `2.0.0` in that change. Stopping writes to the deprecated `heating_samples` collection is a bug fix, `2.0.1` to `2.0.2`. This note does not bump it.
 
-## What the poller does today
+## What the poller did before this change
 
 `NestThermostat::run` in `backend/src/sensor_control/nest.rs` loops one thread. `POLL_INTERVAL_SECS` is 300. Each pass calls `read_thermostat`, which GETs `/enterprises/{project}/devices` and returns both `TemperatureData` and a `HeatingSample`.
 
@@ -42,7 +42,7 @@ The code change that follows this note changes which rows exist. Bump `backend/C
 
 ## Recommendation
 
-One devices GET a minute. From that response, insert a `heating_samples` heartbeat whenever HVAC status is present, and insert a `heating_changes` row only when `hvac_status`, `mode`, `heat_celsius`, or `cool_celsius` differs from memory. Persist Nest temperature only when five minutes have elapsed.
+One devices GET a minute. From that response, insert a `heating_changes` row only when `hvac_status`, `mode`, `heat_celsius`, or `cool_celsius` differs from memory. Do not insert into `heating_samples`. Persist Nest temperature only when five minutes have elapsed.
 
 ```mermaid
 flowchart TB
@@ -51,7 +51,6 @@ flowchart TB
   loop["Every 60 seconds"]
   get["GET Nest devices"]
   present{"HVAC status present?"}
-  beat["Insert one heating_samples heartbeat"]
   changed{"hvac_status, mode, heat_celsius, or cool_celsius differs?"}
   writeH["Insert one heating_changes row, then update memory"]
   hold["Leave heating_changes and memory alone"]
@@ -61,7 +60,7 @@ flowchart TB
 
   start --> seed --> loop --> get --> present
   present -->|no| temp
-  present -->|yes| beat --> changed
+  present -->|yes| changed
   changed -->|yes| writeH --> temp
   changed -->|no| hold --> temp
   temp -->|yes| writeT --> loop
@@ -70,7 +69,7 @@ flowchart TB
 
 Timestamps are `Utc::now()` at the poll that observed the change. They are not rounded to the clock minute. The loop sleeps 60 seconds after each attempt, the same shape as today’s 300-second sleep, so the check is about once a minute rather than aligned to `:00`.
 
-A missing or blank HVAC status is not an observation. Leave memory unchanged and write neither collection for that poll. Do not invent `OFF`, and do not fill `mode`, `heat_celsius`, or `cool_celsius` from the previous row. Nest sends `heatCelsius` in `HEAT`, `coolCelsius` in `COOL`, and both in `HEATCOOL`. A present threshold becoming absent is a real change on the next poll that does include HVAC. `COOLING` stays `COOLING` on the row.
+A missing or blank HVAC status is not an observation. Leave memory unchanged and write nothing for that poll. Do not invent `OFF`, and do not fill `mode`, `heat_celsius`, or `cool_celsius` from the previous row. Nest sends `heatCelsius` in `HEAT`, `coolCelsius` in `COOL`, and both in `HEATCOOL`. A present threshold becoming absent is a real change on the next poll that does include HVAC. `COOLING` stays `COOLING` on the row.
 
 ## Memory
 
@@ -85,7 +84,7 @@ struct RememberedHeating {
 }
 ```
 
-The same four fields are stored in both collections. `heating_samples` also keeps receiving a row when none of them changed. `heating_changes` does not.
+Those four fields are stored on `heating_changes`. The poller does not write `heating_samples`.
 
 ```json
 {
@@ -109,15 +108,15 @@ The same four fields are stored in both collections. `heating_samples` also keep
 
 Two readings match when `hvac_status` is the same string, `mode` is the same optional string, and both thresholds are the same optional values. Compare the numbers Nest sent. A missing threshold is not `0.0`.
 
-`heating_samples` keeps its name, its documents, and its unique index `{ device_name: 1, timestamp: -1 }`. Create `heating_changes` beside it with the same index. `sensor_data` and `TemperatureData` stay as they are.
+`heating_samples` keeps the documents already stored there. The poller does not open that collection and does not insert into it. `heating_changes` has the unique index `{ device_name: 1, timestamp: -1 }`. `sensor_data` and `TemperatureData` stay as they are.
 
-Every successful GET that produces a `HeatingSample` still calls `store_heating_samples` for `heating_samples`. That write is not gated on a change. The current page treats a quiet stretch as “still heating” only while heartbeats keep arriving inside two sample intervals, so those rows have to continue. Their cadence becomes about 60 seconds, because that is now the GET cadence. A 60-second heartbeat still satisfies a page that allows a gap of two 300-second intervals.
+A successful GET that produces a `HeatingSample` calls `store_heating_samples` only for the rows `select_heating_changes` returns, and only against `heating_changes`.
 
 Seed the change-log map once, in `NestThermostat::run`, before the loop, from `heating_changes`:
 
 1. `get_latest_items("device_name", "timestamp")` on that collection.
 2. Insert each returned row into the map, including `cool_celsius` when the row has it.
-3. An empty `heating_changes` leaves the map empty. Empty is unknown, not `OFF` and not a zero threshold. The first real observation inserts one change row. Heartbeats for that same poll still go to `heating_samples`.
+3. An empty `heating_changes` leaves the map empty. Empty is unknown, not `OFF` and not a zero threshold. The first real observation inserts one change row.
 
 Do not call `get_latest_items` on `heating_changes` again from the loop. Do not seed the map from `heating_samples`. The temperature helper may keep calling `get_latest_items` on `sensor_data` for the five-minute write.
 
@@ -134,7 +133,7 @@ stateDiagram-v2
 - Any field differs, or the device has no entry: insert one row, then store that reading in the map.
 - Update the map only after the insert returns `Ok`. A failed insert leaves the old memory, so the next minute retries that row while the thermostat still shows the new values. A change that appears and disappears inside a failed write is missed; that is the same class of loss as a missed poll.
 
-A seed error is not an empty `heating_changes`. Log it, leave change-log writes disabled for the rest of this process, and keep storing temperatures and `heating_samples` heartbeats. Restart after `heating_changes` is readable. Do not read that collection again every minute.
+A seed error is not an empty `heating_changes`. Log it, leave change-log writes disabled for the rest of this process, and keep storing temperatures. Restart after `heating_changes` is readable. Do not read that collection again every minute.
 
 `poll_once` can take `&mut self` so the map does not need its own mutex. The access-token mutex stays as it is.
 
@@ -157,7 +156,7 @@ The one-shot migration has been run. It copied a collapsed change log from `heat
 
 ## Rollout
 
-The poller writes heartbeats to `heating_samples` and changes to `heating_changes`. The current Monitor page keeps reading `heating_samples`. Switch it to `heating_changes` when the website change in [heating-webapp-interface.md](heating-webapp-interface.md) is deployed. That reader treats the space between change rows as “these values are still in force.” `heating_samples` is still being written, so that switch can wait.
+The poller writes `heating_changes` and does not write `heating_samples`. The Monitor page reads `heating_changes`, as specified in [heating-webapp-interface.md](heating-webapp-interface.md). That reader treats the space between change rows as “these values are still in force.”
 
 ## Out of scope
 
@@ -171,5 +170,5 @@ The poller writes heartbeats to `heating_samples` and changes to `heating_change
 1. **Check the thermostat about every 60 seconds**, on the existing devices GET. Sleep 60 seconds between attempts.
 2. **Write Nest temperature rows about every 300 seconds.** Hue stays at one second.
 3. **Keep `hvac_status`, `mode`, `heat_celsius`, and `cool_celsius`.** Write one row when any of them changes, and copy all four onto that row. `COOLING` stays `COOLING`.
-4. **Seed the poller’s memory from the latest `heating_changes` row at startup.** After that, read `heating_changes` only to insert a change. Keep writing a heartbeat to `heating_samples` on every successful GET.
+4. **Seed the poller’s memory from the latest `heating_changes` row at startup.** After that, read `heating_changes` only to insert a change. Do not write `heating_samples`.
 5. **`heating_changes` was filled once from `heating_samples`.** `heating_samples` stays in place. The migration binary has been removed.

@@ -45,11 +45,10 @@ where
     Ok(())
 }
 
-/// Insert each heating sample it is given.
+/// Insert each heating change it is given.
 ///
-/// The heartbeat caller passes every sample from the poll. The change-log caller
-/// passes only the samples whose reading differs from memory. This does not use
-/// the temperature "newer than latest" filter.
+/// The caller passes only the samples whose reading differs from memory.
+/// This does not use the temperature "newer than latest" filter.
 pub fn store_heating_samples<T>(
     data_store: &T,
     samples: Vec<HeatingSample>,

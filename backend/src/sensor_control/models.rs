@@ -199,10 +199,9 @@ pub struct HeatingReading {
     pub cool_celsius: Option<f32>,
 }
 
-/// One thermostat observation.
+/// One thermostat observation written to `heating_changes`.
 ///
-/// `heating_samples` stores one of these on every successful poll. `heating_changes`
-/// stores one only when [`HeatingReading`] differs from the previous row.
+/// A row is stored only when [`HeatingReading`] differs from the previous row.
 /// `mode` and the setpoint fields are omitted when that poll's GET did not include them.
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]

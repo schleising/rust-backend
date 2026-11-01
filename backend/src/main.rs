@@ -10,7 +10,6 @@ use serde::Serialize;
 
 const DATABASE_NAME: &str = "web_database";
 const COLLECTION_NAME: &str = "sensor_data";
-const HEATING_COLLECTION_NAME: &str = "heating_samples";
 const HEATING_CHANGES_COLLECTION_NAME: &str = "heating_changes";
 
 fn ensure_unique_device_timestamp_index<T>(
@@ -94,23 +93,6 @@ fn main() {
         }
     };
 
-    // Heating heartbeats live beside sensor_data, not on the temperature document.
-    let heating_mongo_client: MongoClient<HeatingSample> =
-        match MongoClient::new(DATABASE_NAME, HEATING_COLLECTION_NAME) {
-            Ok(client) => client,
-            Err(error) => {
-                log::error!("Error creating heating samples MongoClient: {error}");
-                return;
-            }
-        };
-
-    if let Err(error) =
-        ensure_unique_device_timestamp_index(&heating_mongo_client, "heating_samples")
-    {
-        log::error!("Error creating heating_samples index: {error}");
-        return;
-    }
-
     let heating_changes_client: MongoClient<HeatingSample> =
         match MongoClient::new(DATABASE_NAME, HEATING_CHANGES_COLLECTION_NAME) {
             Ok(client) => client,
@@ -139,11 +121,7 @@ fn main() {
 
     log::info!("Creating Nest Thermostat");
 
-    let nest = match NestThermostat::new(
-        nest_mongo_client,
-        heating_mongo_client,
-        heating_changes_client,
-    ) {
+    let nest = match NestThermostat::new(nest_mongo_client, heating_changes_client) {
         Ok(nest) => nest,
         Err(error) => {
             log::error!("Error creating Nest Thermostat: {error}");

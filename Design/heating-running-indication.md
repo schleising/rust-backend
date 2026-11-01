@@ -1,6 +1,6 @@
 # Heating running on the Monitor charts
 
-The change log and the website contract that replaces the gap rule are in [heating-state-changes.md](heating-state-changes.md) and [heating-webapp-interface.md](heating-webapp-interface.md). `heating_samples` stays the heartbeat collection the current page reads. New rows, written when `hvac_status`, `mode`, `heat_celsius`, or `cool_celsius` changes, go to `heating_changes` and stay there. The wash, its colors, and drawing only this period’s heating still stand.
+The change log and the website contract that replaces the gap rule are in [heating-state-changes.md](heating-state-changes.md) and [heating-webapp-interface.md](heating-webapp-interface.md). The poller writes `heating_changes` when `hvac_status`, `mode`, `heat_celsius`, or `cool_celsius` changes, and does not write `heating_samples`. The wash, its colors, and drawing only this period’s heating still stand.
 
 ## Goal
 

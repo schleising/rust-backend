@@ -6,7 +6,7 @@ This note is the whole contract for the Monitor page. It does not depend on any 
 
 Read the heating change log and paint a red wash behind the temperature line for the times the heating is actually running. Keep the temperature line, the previous-period line, and the Daily / Weekly windows as they are.
 
-The current page can keep reading `web_database.heating_samples`. That collection stays in place and keeps receiving a heartbeat on every Nest poll. Switch this page to `web_database.heating_changes` when this note is implemented. Until that switch, leave the current reader alone.
+Read `web_database.heating_changes`. The poller writes that collection when the thermostat changes and does not write `heating_samples`.
 
 `heating_changes` is one row each time the thermostat changes. Until the next row, those values are still in force. The page does not see a sample every minute, and it must not invent one. There is no sample interval and no gap rule. A gap check would cut a real run short, because a steady `HEATING` at steady thresholds writes no further row.
 
@@ -47,7 +47,7 @@ Database `web_database`, collection `heating_changes`. The unique index is `{ de
 
 A `HEAT` poll carries `heat_celsius` and omits `cool_celsius`. A `COOL` poll carries `cool_celsius` and omits `heat_celsius`. `HEATCOOL` carries both. A missing threshold is not `0`.
 
-Do not read `heating_samples` for this wash. Those rows are heartbeats, including repeats of an unchanged thermostat. This reader uses `heating_changes` only.
+Do not read `heating_samples` for this wash. The poller does not write that collection. This reader uses `heating_changes` only.
 
 ## Payload
 
@@ -233,7 +233,7 @@ The service worker already fetches `/timeseries/` from the network. The new obje
 
 ## Decisions
 
-1. **Read `web_database.heating_changes`.** Leave `heating_samples` to the current page until this reader replaces it.
+1. **Read `web_database.heating_changes`.** Do not read `heating_samples`.
 2. **`heating.changes` is the series.** Each item carries `timestamp`, `hvac_status`, `mode`, `heat_celsius`, and `cool_celsius`. There is no sample interval.
 3. **Include the newest row before the 14-day horizon** so a reading already in force has a start.
 4. **A wash runs from a transition into `HEATING` until a transition out of it.** A later row that is still `HEATING` only updates `mode` or a threshold. `COOLING` stays on the row and is not drawn. The last `HEATING` extends to now on the current window only.
