@@ -41,11 +41,11 @@ Database `web_database`, collection `heating_changes`. The unique index is `{ de
 | `device_name` | Nest display name. This house has one thermostat |
 | `timestamp` | UTC time when this combination was first observed |
 | `hvac_status` | `OFF`, `HEATING`, or `COOLING` |
-| `mode` | Nest mode, such as `HEAT`, `COOL`, `HEATCOOL`, or `OFF`. Omitted when that poll had none |
+| `mode` | Nest mode: `HEAT`, `COOL`, `HEATCOOL`, `HEAT_COOL`, `OFF`, `ECO`, or `MANUAL_ECO`. Omitted when that poll had none |
 | `heat_celsius` | Heat threshold. Omitted when Nest did not send `heatCelsius` |
 | `cool_celsius` | Cool threshold. Omitted when Nest did not send `coolCelsius` |
 
-A `HEAT` poll carries `heat_celsius` and omits `cool_celsius`. A `COOL` poll carries `cool_celsius` and omits `heat_celsius`. `HEATCOOL` carries both. A missing threshold is not `0`.
+A `HEAT` poll carries `heat_celsius` and omits `cool_celsius`. A `COOL` poll carries `cool_celsius` and omits `heat_celsius`. `HEATCOOL` and `HEAT_COOL` carry both. `ECO` and `MANUAL_ECO` carry the Eco heat and cool thresholds. A missing threshold is not `0`.
 
 Do not read `heating_samples` for this wash. The poller does not write that collection. This reader uses `heating_changes` only.
 

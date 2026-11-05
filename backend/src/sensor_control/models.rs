@@ -139,6 +139,8 @@ pub struct NestTraits {
     pub hvac: Option<NestThermostatHvacTrait>,
     #[serde(default, rename = "sdm.devices.traits.ThermostatMode")]
     pub thermostat_mode: Option<NestThermostatModeTrait>,
+    #[serde(default, rename = "sdm.devices.traits.ThermostatEco")]
+    pub thermostat_eco: Option<NestThermostatEcoTrait>,
     #[serde(default, rename = "sdm.devices.traits.ThermostatTemperatureSetpoint")]
     pub temperature_setpoint: Option<NestTemperatureSetpointTrait>,
 }
@@ -174,10 +176,27 @@ pub struct NestThermostatHvacTrait {
 }
 
 /// `sdm.devices.traits.ThermostatMode`. Stored for a later usage page. Not drawn.
+///
+/// Nest sends `HEAT`, `COOL`, `HEATCOOL`, `HEAT_COOL`, or `OFF`.
 #[derive(Debug, Deserialize)]
 pub struct NestThermostatModeTrait {
     #[serde(default)]
     pub mode: Option<String>,
+}
+
+/// `sdm.devices.traits.ThermostatEco`. Eco is its own mode, not `OFF`.
+///
+/// Nest sends `MANUAL_ECO` or `OFF`. `ECO` is stored the same way when a device sends it.
+/// While Eco is selected, this trait carries the heat and cool thresholds and
+/// `ThermostatTemperatureSetpoint` does not.
+#[derive(Debug, Deserialize)]
+pub struct NestThermostatEcoTrait {
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default, rename = "heatCelsius")]
+    pub heat_celsius: Option<f32>,
+    #[serde(default, rename = "coolCelsius")]
+    pub cool_celsius: Option<f32>,
 }
 
 /// Active-mode targets from `sdm.devices.traits.ThermostatTemperatureSetpoint`.
@@ -232,25 +251,32 @@ impl HeatingSample {
             .map(str::trim)
             .filter(|status| !status.is_empty())?;
 
-        let mode = device
-            .traits
-            .thermostat_mode
-            .as_ref()
-            .and_then(|mode| mode.mode.as_deref())
-            .map(str::trim)
-            .filter(|mode| !mode.is_empty())
-            .map(ToString::to_string);
-
-        let heat_celsius = device
-            .traits
-            .temperature_setpoint
-            .as_ref()
-            .and_then(|setpoint| setpoint.heat_celsius);
-        let cool_celsius = device
-            .traits
-            .temperature_setpoint
-            .as_ref()
-            .and_then(|setpoint| setpoint.cool_celsius);
+        let (mode, heat_celsius, cool_celsius) = match active_eco(device) {
+            Some(eco) => (
+                Some(eco.mode.to_string()),
+                eco.heat_celsius,
+                eco.cool_celsius,
+            ),
+            None => {
+                let mode = device
+                    .traits
+                    .thermostat_mode
+                    .as_ref()
+                    .and_then(|mode| nonempty_trimmed(mode.mode.as_deref()))
+                    .map(ToString::to_string);
+                let heat_celsius = device
+                    .traits
+                    .temperature_setpoint
+                    .as_ref()
+                    .and_then(|setpoint| setpoint.heat_celsius);
+                let cool_celsius = device
+                    .traits
+                    .temperature_setpoint
+                    .as_ref()
+                    .and_then(|setpoint| setpoint.cool_celsius);
+                (mode, heat_celsius, cool_celsius)
+            }
+        };
 
         Some(Self {
             device_name: device.display_name(),
@@ -273,6 +299,27 @@ impl HeatingSample {
 }
 
 pub const THERMOSTAT_TYPE: &str = "sdm.devices.types.THERMOSTAT";
+
+struct ActiveEco<'a> {
+    mode: &'a str,
+    heat_celsius: Option<f32>,
+    cool_celsius: Option<f32>,
+}
+
+fn nonempty_trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|text| !text.is_empty())
+}
+
+/// Eco in force. `OFF` and a blank mode leave the standard thermostat mode in place.
+fn active_eco(device: &NestDevice) -> Option<ActiveEco<'_>> {
+    let eco = device.traits.thermostat_eco.as_ref()?;
+    let mode = nonempty_trimmed(eco.mode.as_deref()).filter(|mode| *mode != "OFF")?;
+    Some(ActiveEco {
+        mode,
+        heat_celsius: eco.heat_celsius,
+        cool_celsius: eco.cool_celsius,
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -390,6 +437,67 @@ mod tests {
         }))?;
 
         assert!(HeatingSample::from_thermostat(&parsed, Utc::now()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn listed_thermostat_modes_are_stored_as_sent() -> Result<(), String> {
+        for mode in ["HEAT", "COOL", "HEATCOOL", "HEAT_COOL", "OFF"] {
+            let parsed = device(serde_json::json!({
+                "sdm.devices.traits.ThermostatHvac": { "status": "OFF" },
+                "sdm.devices.traits.ThermostatMode": { "mode": mode },
+                "sdm.devices.traits.ThermostatEco": {
+                    "mode": "OFF",
+                    "heatCelsius": 10.0,
+                    "coolCelsius": 28.0
+                }
+            }))?;
+            let sample = require_sample(&parsed, Utc::now())?;
+            assert_eq!(sample.mode.as_deref(), Some(mode));
+            assert_eq!(sample.heat_celsius, None);
+            assert_eq!(sample.cool_celsius, None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn manual_eco_replaces_the_standard_mode_and_setpoints() -> Result<(), String> {
+        let parsed = device(serde_json::json!({
+            "sdm.devices.traits.ThermostatHvac": { "status": "OFF" },
+            "sdm.devices.traits.ThermostatMode": { "mode": "HEAT" },
+            "sdm.devices.traits.ThermostatEco": {
+                "mode": "MANUAL_ECO",
+                "heatCelsius": 10.0,
+                "coolCelsius": 28.0
+            },
+            "sdm.devices.traits.ThermostatTemperatureSetpoint": { "heatCelsius": 21.0 }
+        }))?;
+
+        let sample = require_sample(&parsed, Utc::now())?;
+
+        assert_eq!(sample.mode.as_deref(), Some("MANUAL_ECO"));
+        assert_eq!(sample.heat_celsius, Some(10.0));
+        assert_eq!(sample.cool_celsius, Some(28.0));
+        Ok(())
+    }
+
+    #[test]
+    fn eco_mode_is_stored_as_sent() -> Result<(), String> {
+        let parsed = device(serde_json::json!({
+            "sdm.devices.traits.ThermostatHvac": { "status": "OFF" },
+            "sdm.devices.traits.ThermostatMode": { "mode": "HEATCOOL" },
+            "sdm.devices.traits.ThermostatEco": {
+                "mode": "ECO",
+                "heatCelsius": 12.0,
+                "coolCelsius": 26.0
+            }
+        }))?;
+
+        let sample = require_sample(&parsed, Utc::now())?;
+
+        assert_eq!(sample.mode.as_deref(), Some("ECO"));
+        assert_eq!(sample.heat_celsius, Some(12.0));
+        assert_eq!(sample.cool_celsius, Some(26.0));
         Ok(())
     }
 

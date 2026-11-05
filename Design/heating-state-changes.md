@@ -7,7 +7,7 @@ Check the Nest thermostat once a minute. Write a `web_database.heating_changes` 
 | Field | Meaning |
 | --- | --- |
 | `hvac_status` | Whether the equipment is actively heating or cooling (`HEATING`, `COOLING`, or `OFF`) |
-| `mode` | Whether the equipment will call for heat or cool against its thresholds (`HEAT`, `COOL`, `HEATCOOL`, `OFF`, and the other Nest modes) |
+| `mode` | Whether the equipment will call for heat, cool, or Eco (`HEAT`, `COOL`, `HEATCOOL`, `HEAT_COOL`, `OFF`, `ECO`, `MANUAL_ECO`) |
 | `heat_celsius` | The heat threshold, in degrees Celsius |
 | `cool_celsius` | The cool threshold, in degrees Celsius |
 
@@ -28,7 +28,7 @@ Keep Nest temperature rows on their current five-minute cadence, and leave Hue a
 
 `heating_changes` keeps that name. Nothing renames it onto `heating_samples`, and nothing renames `heating_samples` away. Existing `heating_samples` documents stay where they are. The website contract for the new collection is [heating-webapp-interface.md](heating-webapp-interface.md). That file is the copy to take into the website3 design folder.
 
-The code change that follows this note changes which rows exist. Bump `backend/Cargo.toml` from `1.2.1` to `2.0.0` in that change. Stopping writes to the deprecated `heating_samples` collection is a bug fix, `2.0.1` to `2.0.2`. This note does not bump it.
+The code change that follows this note changes which rows exist. Bump `backend/Cargo.toml` from `1.2.1` to `2.0.0` in that change. Stopping writes to the deprecated `heating_samples` collection is a bug fix, `2.0.1` to `2.0.2`. Storing Eco as its own mode is `2.1.0`. This note does not bump it.
 
 ## What the poller did before this change
 
@@ -71,6 +71,8 @@ Timestamps are `Utc::now()` at the poll that observed the change. They are not r
 
 A missing or blank HVAC status is not an observation. Leave memory unchanged and write nothing for that poll. Do not invent `OFF`, and do not fill `mode`, `heat_celsius`, or `cool_celsius` from the previous row. Nest sends `heatCelsius` in `HEAT`, `coolCelsius` in `COOL`, and both in `HEATCOOL`. A present threshold becoming absent is a real change on the next poll that does include HVAC. `COOLING` stays `COOLING` on the row.
 
+Eco is `sdm.devices.traits.ThermostatEco`, not a value of `ThermostatMode`. While that trait's `mode` is anything other than `OFF`, store that string (`MANUAL_ECO`, or `ECO` when the device sends it) and store that trait's `heatCelsius` and `coolCelsius`. Nest does not return `ThermostatTemperatureSetpoint` while Eco is on. An Eco mode of `OFF` leaves `ThermostatMode` and its setpoints in place. Eco is not stored as `OFF`.
+
 ## Memory
 
 The poll thread owns a map from `device_name` to the last values. This house has one thermostat. The map still keys by name so a second thermostat cannot overwrite the first.
@@ -102,7 +104,7 @@ Those four fields are stored on `heating_changes`. The poller does not write `he
 | `device_name` | Same `display_name()` as the Nest temperature row |
 | `timestamp` | `Utc::now()` when these values were first observed |
 | `hvac_status` | Trimmed `ThermostatHvac.status` (`OFF`, `HEATING`, or `COOLING`). Required |
-| `mode` | Trimmed `ThermostatMode.mode`. Omitted when absent or blank |
+| `mode` | Trimmed `ThermostatEco.mode` when Eco is not `OFF` (`MANUAL_ECO` or `ECO`). Otherwise trimmed `ThermostatMode.mode` (`HEAT`, `COOL`, `HEATCOOL`, `HEAT_COOL`, or `OFF`). Omitted when absent or blank |
 | `heat_celsius` | `ThermostatTemperatureSetpoint.heatCelsius`. Omitted when the GET did not include it |
 | `cool_celsius` | `ThermostatTemperatureSetpoint.coolCelsius`. Omitted when the GET did not include it |
 
